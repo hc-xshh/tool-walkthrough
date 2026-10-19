@@ -433,12 +433,13 @@ def cmd_audit(a):
         f"{len(refs)} refs, {len(missing_refs)} missing",
     ))
 
-    shots = [e for e in events if e.get("action") == "shot"]
+    shots = [e for e in events if e.get("action") in ("shot", "cdp:shot")]
     bad_shots = []
     for e in shots:
         p = Path(e.get("screenshot", ""))
         if not p.is_absolute():
-            p = run / p
+            candidates = [run / p, run.parent / p, Path.cwd() / p]
+            p = next((c for c in candidates if c.exists()), p)
         if not p.exists():
             bad_shots.append(str(p))
     checks.append((

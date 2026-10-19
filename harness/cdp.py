@@ -53,7 +53,7 @@ def _log(op, target, status, started, screenshot=None, detail=""):
         "target": str(target or "")[:200].replace("\n", " "),
     }
     if screenshot:
-        rec["screenshot"] = str(screenshot)
+        rec["screenshot"] = str(Path(screenshot).expanduser().resolve())
     if detail:
         rec["detail"] = str(detail)[:300]
     with open(path / "events.jsonl", "a", encoding="utf-8") as fh:
@@ -117,6 +117,36 @@ def main():
               el.scrollIntoView({{block:'center'}}); el.click();
               return 'clicked: ' + (el.innerText || el.tagName).slice(0,40);
             }})()"""))
+        elif a.op == "clickxy":
+            x, y = (float(v) for v in a.arg.split(","))
+            for t in ("mousePressed", "mouseReleased"):
+                c.cmd("Input.dispatchMouseEvent", {"type": t, "x": x, "y": y,
+                                                   "button": "left", "clickCount": 1})
+            print(f"clicked at {x:.0f},{y:.0f}")
+        elif a.op == "type":
+            c.cmd("Input.insertText", {"text": a.arg or ""})
+            print(f"typed {len(a.arg or '')} chars")
+        elif a.op == "key":
+            key = a.arg or "Enter"
+            code = {"Enter": 13, "Escape": 27, "Tab": 9}.get(key, 13)
+            for t in ("keyDown", "keyUp"):
+                c.cmd("Input.dispatchKeyEvent", {"type": t, "key": key, "code": key,
+                                                 "windowsVirtualKeyCode": code,
+                                                 "nativeVirtualKeyCode": code})
+            print(f"key {key}")
+        elif a.op == "keycombo":
+            parts = (a.arg or "").lower().split("+")
+            key = parts[-1]
+            mods = {"alt": 1, "ctrl": 2, "meta": 4, "shift": 8}
+            modifiers = sum(mods.get(p, 0) for p in parts[:-1])
+            vk = ord(key.upper()) if len(key) == 1 else {"enter": 13, "escape": 27, "tab": 9}.get(key, 0)
+            code = ("Key" + key.upper()) if len(key) == 1 else key.capitalize()
+            for t in ("keyDown", "keyUp"):
+                c.cmd("Input.dispatchKeyEvent", {"type": t, "key": key, "code": code,
+                                                 "modifiers": modifiers,
+                                                 "windowsVirtualKeyCode": vk,
+                                                 "nativeVirtualKeyCode": vk})
+            print(f"key {a.arg}")
         elif a.op in ("clicktext", "clickel"):
             want = json.dumps(a.arg)
             pick = "hits[hits.length - 1]" if a.nth is None else f"hits[{a.nth}]"
