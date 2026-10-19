@@ -1,0 +1,11 @@
+{
+  "name": "windows",
+  "os": "Windows",
+  "screenshot": "powershell-dotnet",
+  "click": "ctypes-user32",
+  "ocr_lang": "chi_sim+eng",
+  "ocr_psm": 11,
+  "geometry": "virtual-screen",
+  "isolation": "separate Windows user or VM",
+  "notes": "Run in an interactive desktop session; elevated windows need an elevated agent. Git Bash is required for hooks."
+}

@@ -1,0 +1,11 @@
+{
+  "name": "macos",
+  "os": "Darwin",
+  "screenshot": "screencapture",
+  "click": "cliclick-or-applescript",
+  "ocr_lang": "chi_sim+eng",
+  "ocr_psm": 11,
+  "geometry": "screen",
+  "isolation": "separate macOS user or VM",
+  "notes": "Grant Screen Recording + Accessibility. Retina: screenshot pixels vs click points may need scaling."
+}

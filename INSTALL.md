@@ -70,7 +70,9 @@ pip install -r harness/requirements.txt
 ## 5. 自检
 
 ```bash
-python3 harness/wt.py preflight
+python3 harness/wt.py profiles
+python3 harness/wt.py --profile linux-x11 preflight
+python3 harness/wt.py audit runs/<run>      # 走后查本轮证据
 ```
 
 输出里 `FAIL` 需要处理，`WARN` 需要判断：

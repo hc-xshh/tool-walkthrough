@@ -1,0 +1,12 @@
+{
+  "name": "linux-x11",
+  "os": "Linux",
+  "screenshot": "ffmpeg-x11grab",
+  "click": "xdotool",
+  "ocr_lang": "chi_sim+eng",
+  "ocr_psm": 11,
+  "display": ":98",
+  "geometry": "1440x900",
+  "isolation": "Xvfb + openbox + private DBus",
+  "notes": "Use desktop-up.sh, then launch with app-launch.sh or wt.py launch."
+}

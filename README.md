@@ -46,16 +46,16 @@ python3 harness/wt.py new-run 2026-10-19-<tool>
 # 2. 预检（三平台）
 python3 harness/wt.py preflight
 
-# 3. 启动应用
+# 3. 启动应用（带 --run 才会写事件日志）
 #    Linux：默认全新 HOME；需要登录态时设 WALKTHROUGH_HOME / WALKTHROUGH_DBUS
-python3 harness/wt.py launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
+python3 harness/wt.py --run runs/<run> launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
 #    macOS：--app 走 `open -a`；Windows：直接传 exe 路径
-python3 harness/wt.py launch --app "<AppName>" --log runs/<run>/logs/app.log
+python3 harness/wt.py --run runs/<run> launch --app "<AppName>" --log runs/<run>/logs/app.log
 
 # 4. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
-python3 harness/wt.py shot runs/<run>/shots/01.png
-python3 harness/wt.py ocr runs/<run>/shots/01.png
-python3 harness/wt.py click 300 241
+python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
+python3 harness/wt.py --run runs/<run> ocr runs/<run>/shots/01.png
+python3 harness/wt.py --run runs/<run> click 300 241
 
 # 5. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
 #    启动时加 --remote-debugging-port=9339
@@ -88,6 +88,31 @@ python3 harness/wt.py report runs/<date>-<tool>
 不要 `git add -f runs/`，不要 `git clean -xdf`（会删掉未跟踪的证据）。
 
 **备份**：`runs/` 只在本机，没有远程副本。换机、误删、硬盘故障都会丢；自己定期同步到外置盘或网盘。
+
+## 事件日志、审计与版本锚定
+
+**事件日志**：带 `--run runs/<run>`（或环境变量 `WALKTHROUGH_RUN`）的命令会往 `runs/<run>/events.jsonl` 追加一行：
+`ts / os / action / result / duration_ms / target / screenshot / detail`。
+`new-run` 会同时写 `harness.json`，记录本轮实际用的 profile、OS、Python、tesseract、Chrome 版本。
+
+**审计**：
+
+```bash
+python3 harness/wt.py audit runs/<run>
+```
+
+逐项检查：`report.md` 是否存在、报告里引用的截图是否都在、`shot` 事件的文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图、`harness.json` 是否存在。有 FAIL 时退出码非 0，可以直接接 CI。
+
+**Profiles**：
+
+```bash
+python3 harness/wt.py profiles          # 列出 linux-x11 / macos / windows / ci
+python3 harness/wt.py --profile ci preflight
+```
+
+profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选。
+
+**版本锚定**：`harness/harness.lock` 记录 `wt_version`、最低 Python / tesseract 版本和已实测平台；`preflight` 会对照它给出 WARN。报告附录建议带上 `harness.json` 的版本信息。
 
 ## 跨平台对照
 

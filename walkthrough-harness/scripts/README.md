@@ -2,7 +2,7 @@
 
 | Script | Purpose |
 |---|---|
-| `../../harness/wt.py` | Cross-platform entry: preflight / new-run / shot / click / ocr / launch / report |
+| `../../harness/wt.py` | Cross-platform entry: preflight / profiles / new-run / shot / click / ocr / launch / report / audit |
 | `../../harness/preflight.sh` | Linux: display, app version, sandbox mode, CDP port, disk, login state |
 | `../../harness/desktop-up.sh` | Linux: Xvfb + openbox + private DBus |
 | `../../harness/app-launch.sh` | Linux: launch a GUI app in the isolated desktop |
@@ -14,11 +14,13 @@
 Typical sequence (all platforms):
 
 ```bash
-python3 harness/wt.py preflight
+python3 harness/wt.py profiles
+python3 harness/wt.py --profile linux-x11 preflight
 python3 harness/wt.py new-run 2026-10-19-<tool>
-python3 harness/wt.py shot runs/<run>/shots/01.png
+python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
 python3 harness/cdp.py --port 9339 text
 python3 harness/wt.py report runs/<run>
+python3 harness/wt.py audit runs/<run>
 ```
 
 Linux isolated desktop (optional):

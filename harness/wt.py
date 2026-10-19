@@ -3,31 +3,43 @@
 
 One entry point for the operations that differ by OS:
 
-  python3 harness/wt.py preflight
+  python3 harness/wt.py --run runs/2026-10-19-tool preflight
   python3 harness/wt.py new-run 2026-10-19-tool
-  python3 harness/wt.py shot out.png
-  python3 harness/wt.py click 300 241
-  python3 harness/wt.py ocr out.png
-  python3 harness/wt.py launch --log /tmp/app.log -- /path/to/app
+  python3 harness/wt.py --run runs/2026-10-19-tool shot out.png
+  python3 harness/wt.py --run runs/2026-10-19-tool click 300 241
+  python3 harness/wt.py --run runs/2026-10-19-tool ocr out.png
+  python3 harness/wt.py --run runs/2026-10-19-tool launch --log app.log -- /path/to/app
   python3 harness/wt.py report runs/2026-10-19-tool
+  python3 harness/wt.py audit runs/2026-10-19-tool
 
 Linux uses X11 tooling (ffmpeg/xdotool). macOS uses screencapture and
 cliclick (or AppleScript). Windows uses PowerShell/.NET and ctypes.
 CDP stays in cdp.py and works on all three.
+
+Every command with --run (or WALKTHROUGH_RUN) appends one line to
+runs/<run>/events.jsonl: timestamp, action, target, result, duration and
+evidence path. `audit` cross-checks that log against report.md and shots/.
 """
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import platform
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+from datetime import datetime
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OS = platform.system()  # Linux / Darwin / Windows
+WT_VERSION = "1.1.0"
+PROFILES_DIR = ROOT / "harness" / "profiles"
+LOCK_FILE = ROOT / "harness" / "harness.lock"
 
 
 def which_any(names):
@@ -69,6 +81,106 @@ def find_chrome():
     return which_any(["google-chrome", "chromium", "chromium-browser", "chrome", "msedge"])
 
 
+def load_profile(name):
+    if not name or name == "auto":
+        name = {"Linux": "linux-x11", "Darwin": "macos", "Windows": "windows"}.get(OS, "linux-x11")
+    path = PROFILES_DIR / f"{name}.json"
+    if not path.exists():
+        raise SystemExit(f"unknown profile: {name} (looked in {PROFILES_DIR})")
+    data = json.loads(path.read_text(encoding="utf-8"))
+    data["_name"] = name
+    return data
+
+
+def profile(a):
+    if not hasattr(a, "_profile"):
+        a._profile = load_profile(getattr(a, "profile", None))
+    return a._profile
+
+
+def version_tuple(text):
+    m = re.search(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(text))
+    if not m:
+        return ()
+    return tuple(int(x) for x in m.groups() if x is not None)
+
+
+def tesseract_version():
+    p = which_any(["tesseract"])
+    if not p:
+        return None
+    try:
+        out = subprocess.run([p, "--version"], capture_output=True, text=True, timeout=5)
+        return version_tuple(out.stdout or out.stderr)
+    except Exception:
+        return None
+
+
+def load_lock():
+    if LOCK_FILE.exists():
+        try:
+            return json.loads(LOCK_FILE.read_text(encoding="utf-8"))
+        except Exception:
+            return {}
+    return {}
+
+
+def resolve_run(a):
+    if getattr(a, "run", None):
+        return Path(a.run).expanduser().resolve()
+    if getattr(a, "cmd", None) == "new-run":
+        return (ROOT / "runs" / a.name).resolve()
+    if getattr(a, "cmd", None) in ("report", "audit"):
+        return Path(a.run_dir).expanduser().resolve()
+    env = os.environ.get("WALKTHROUGH_RUN")
+    return Path(env).expanduser().resolve() if env else None
+
+
+def log_event(run, **fields):
+    if not run:
+        return
+    run.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "os": OS,
+        **fields,
+    }
+    with open(run / "events.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
+
+def read_events(run):
+    events = []
+    path = run / "events.jsonl"
+    if not path.exists():
+        return events
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            events.append(json.loads(line))
+        except json.JSONDecodeError:
+            continue
+    return events
+
+
+def write_harness_json(run, prof):
+    path = run / "harness.json"
+    if path.exists():
+        return
+    lock = load_lock()
+    data = {
+        "schema": 1,
+        "wt_version": WT_VERSION,
+        "profile": prof.get("_name"),
+        "os": platform.platform(),
+        "python": platform.python_version(),
+        "tesseract": ".".join(map(str, tesseract_version() or ())) or "not found",
+        "chrome": find_chrome() or "not found",
+        "lock": lock,
+        "created": datetime.now().astimezone().isoformat(timespec="seconds"),
+    }
+    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
 def say(name, ok, detail, warn_only=False):
     status = "PASS" if ok else ("WARN" if warn_only else "FAIL")
     print(f"{name:<24} {status:<5} {detail}")
@@ -76,20 +188,32 @@ def say(name, ok, detail, warn_only=False):
 
 
 def cmd_preflight(a):
+    prof = profile(a)
+    lock = load_lock()
     rc = 0
+    print(f"{'profile':<24} {'PASS':<5} {prof.get('_name')} (os={OS})")
     print(f"{'os':<24} {'PASS':<5} {platform.platform()} ({platform.machine()})")
-    rc |= say("python", sys.version_info >= (3, 9), platform.python_version())
+
+    py_min = version_tuple(lock.get("python_min", "3.9"))
+    py_ok = sys.version_info[:2] >= py_min[:2]
+    rc |= say("python", py_ok, platform.python_version())
+
     tess = which_any(["tesseract"])
-    rc |= say("tesseract", bool(tess), tess or "install tesseract + chi_sim data")
+    tess_ok = bool(tess)
+    tess_min = version_tuple(lock.get("tesseract_min", "5.0"))
+    tess_ver = tesseract_version()
+    if tess and tess_ver and tess_min and tess_ver[:2] < tess_min[:2]:
+        tess_ok = False
+    say("tesseract", tess_ok, f"{tess or 'missing'} {'.'.join(map(str, tess_ver or ()))}".strip(), warn_only=True)
+
     chrome = find_chrome()
-    rc |= say("chrome", bool(chrome), chrome or "install Chrome/Chromium")
-    print(f"{'git repo':<24} {'PASS':<5} {ROOT}")
+    say("chrome", bool(chrome), chrome or "install Chrome/Chromium", warn_only=True)
 
     if OS == "Linux":
         for b in ("ffmpeg", "xdotool", "Xvfb", "openbox", "dbus-daemon"):
             p = which_any([b])
-            rc |= say(b, bool(p), p or "missing (Linux desktop walkthroughs)")
-        disp = a.display or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
+            say(b, bool(p), p or "missing (Linux desktop walkthroughs)", warn_only=True)
+        disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
         ok = subprocess.run(
             ["xdpyinfo", "-display", disp], capture_output=True, text=True
         ).returncode == 0
@@ -98,39 +222,62 @@ def cmd_preflight(a):
         say("screencapture", bool(which_any(["screencapture"])), "system tool", warn_only=True)
         clic = which_any(["cliclick"])
         say("cliclick", bool(clic), clic or "optional; brew install cliclick", warn_only=True)
-        say("permissions", True, "grant Screen Recording + Accessibility to Terminal", warn_only=True)
+        say("permissions", True, "grant Screen Recording + Accessibility", warn_only=True)
     elif OS == "Windows":
         ps = which_any(["powershell", "pwsh"])
-        rc |= say("powershell", bool(ps), ps or "missing")
-        say("tesseract", bool(tess), tess or "install tesseract and add it to PATH")
+        say("powershell", bool(ps), ps or "missing", warn_only=True)
         say("session", True, "run inside an interactive desktop session", warn_only=True)
     else:
         say("platform", False, f"unsupported OS: {OS}")
         rc = 1
+
+    caps = [
+        "screenshot",
+        "click" if OS != "Linux" or which_any(["xdotool"]) else "click:unavailable",
+        "ocr" if tess_ok else "ocr:unavailable",
+        "cdp",
+    ]
+    print(f"{'capabilities':<24} {'INFO':<5} {', '.join(caps)}")
+    if lock and lock.get("wt_version") and lock["wt_version"] != WT_VERSION:
+        say("lock version", False, f"lock={lock['wt_version']} wt={WT_VERSION}", warn_only=True)
     return 1 if rc else 0
 
 
+def cmd_profiles(a):
+    rows = []
+    for p in sorted(PROFILES_DIR.glob("*.json")):
+        d = json.loads(p.read_text(encoding="utf-8"))
+        rows.append((d.get("name", p.stem), d.get("os", ""), d.get("isolation", "")))
+    for name, os_name, isolation in rows:
+        print(f"{name:<14} {os_name:<8} {isolation}")
+    return {"target": "profiles", "detail": f"{len(rows)} profiles"}
+
+
 def cmd_new_run(a):
-    run = ROOT / "runs" / a.name
+    run = (ROOT / "runs" / a.name).resolve()
     for sub in ("shots", "logs", "artifacts"):
         (run / sub).mkdir(parents=True, exist_ok=True)
+    write_harness_json(run, profile(a))
     print(run)
     print("runs/ is git-ignored. Do not 'git add -f' this directory.")
+    return {"target": str(run)}
 
 
 def cmd_shot(a):
+    prof = profile(a)
     out = Path(a.out).expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
+    disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
+    geom = a.geometry or prof.get("geometry") or "1440x900"
+
     if OS == "Linux":
-        disp = a.display or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
-        env = dict(os.environ, DISPLAY=disp)
         subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "x11grab", "-video_size", a.geometry, "-i", disp,
+                "-f", "x11grab", "-video_size", geom, "-i", disp,
                 "-frames:v", "1", "-y", str(out),
             ],
-            check=True, env=env,
+            check=True, env=dict(os.environ, DISPLAY=disp),
         )
     elif OS == "Darwin":
         subprocess.run(["screencapture", "-x", "-o", str(out)], check=True)
@@ -158,13 +305,15 @@ $g.Dispose(); $bmp.Dispose()
     else:
         raise SystemExit(f"unsupported OS: {OS}")
     print(out)
+    return {"target": str(out), "screenshot": str(out)}
 
 
 def cmd_click(a):
+    prof = profile(a)
+    disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
     if OS == "Linux":
-        disp = a.display or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
         subprocess.run(
-            ["xdotool", "mousemove", "--sync", str(a.x), str(a.y), "click", str(a.button)],
+            ["xdotool", "mousemove", str(a.x), str(a.y), "click", str(a.button)],
             check=True, env=dict(os.environ, DISPLAY=disp),
         )
     elif OS == "Darwin":
@@ -184,19 +333,24 @@ def cmd_click(a):
     else:
         raise SystemExit(f"unsupported OS: {OS}")
     print(f"clicked {a.x},{a.y} button={a.button} os={OS}")
+    return {"target": f"{a.x},{a.y}", "detail": f"button={a.button}"}
 
 
 def cmd_ocr(a):
+    prof = profile(a)
     tess = which_any(["tesseract"])
     if not tess:
         raise SystemExit("tesseract not found; install it and the chi_sim data")
     img = Path(a.image).expanduser().resolve()
+    lang = a.lang or prof.get("ocr_lang") or "chi_sim+eng"
+    psm = a.psm if a.psm is not None else prof.get("ocr_psm", 11)
     p = subprocess.run(
-        [tess, str(img), "stdout", "-l", a.lang, "--psm", str(a.psm), "tsv"],
+        [tess, str(img), "stdout", "-l", lang, "--psm", str(psm), "tsv"],
         capture_output=True, text=True, encoding="utf-8", errors="replace",
     )
     if p.returncode != 0:
         raise SystemExit(p.stderr.strip() or "tesseract failed")
+    count = 0
     for line in p.stdout.splitlines()[1:]:
         cols = line.split("\t")
         if len(cols) < 12 or not cols[11].strip():
@@ -207,10 +361,13 @@ def cmd_ocr(a):
             continue
         if conf < a.min_conf:
             continue
+        count += 1
         print(f"{cols[11]}\tx={cols[6]} y={cols[7]} w={cols[8]} h={cols[9]}\tconf={cols[10]}")
+    return {"target": str(img), "detail": f"{count} words"}
 
 
 def cmd_launch(a):
+    prof = profile(a)
     log = Path(a.log).expanduser().resolve()
     log.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
@@ -223,7 +380,7 @@ def cmd_launch(a):
         home.mkdir(parents=True, exist_ok=True)
         (base / "runtime").mkdir(parents=True, exist_ok=True)
         env.update(
-            DISPLAY=a.display or os.environ.get("WALKTHROUGH_DISPLAY", ":98"),
+            DISPLAY=a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98"),
             HOME=str(home),
             XDG_RUNTIME_DIR=str(base / "runtime"),
             DBUS_SESSION_BUS_ADDRESS=os.environ.get(
@@ -247,6 +404,7 @@ def cmd_launch(a):
     else:
         raise SystemExit(f"unsupported OS: {OS}")
     print(f"launched pid {p.pid} log={log}")
+    return {"target": " ".join(cmd), "detail": f"pid={p.pid} log={log}"}
 
 
 def cmd_report(a):
@@ -254,15 +412,90 @@ def cmd_report(a):
     subprocess.run(
         [sys.executable, str(script), a.run_dir, "--out", a.out], check=True
     )
+    return {"target": str(Path(a.run_dir).expanduser().resolve())}
+
+
+def cmd_audit(a):
+    run = Path(a.run_dir).expanduser().resolve()
+    events = read_events(run)
+    checks = []
+
+    report = run / "report.md"
+    report_ok = report.exists() and report.stat().st_size > 0
+    checks.append(("report.md", "PASS" if report_ok else "FAIL", str(report)))
+
+    text = report.read_text(encoding="utf-8", errors="replace") if report_ok else ""
+    refs = re.findall(r"shots/[^\s)`\"']+\.(?:png|jpg|jpeg)", text)
+    missing_refs = [r for r in refs if not (run / r).exists()]
+    checks.append((
+        "report image refs",
+        "PASS" if refs and not missing_refs else ("FAIL" if missing_refs else "WARN"),
+        f"{len(refs)} refs, {len(missing_refs)} missing",
+    ))
+
+    shots = [e for e in events if e.get("action") == "shot"]
+    bad_shots = []
+    for e in shots:
+        p = Path(e.get("screenshot", ""))
+        if not p.is_absolute():
+            p = run / p
+        if not p.exists():
+            bad_shots.append(str(p))
+    checks.append((
+        "shot files",
+        "PASS" if shots and not bad_shots else ("FAIL" if bad_shots else "WARN"),
+        f"{len(shots)} shots, {len(bad_shots)} missing",
+    ))
+
+    errors = [e for e in events if e.get("result") == "error"]
+    checks.append((
+        "error events",
+        "PASS" if not errors else "WARN",
+        f"{len(errors)} (last: {errors[-1].get('action') if errors else '-'})",
+    ))
+
+    gaps = 0
+    for i, e in enumerate(events):
+        if e.get("action") == "click":
+            if not any(x.get("action") == "shot" for x in events[i + 1:i + 6]):
+                gaps += 1
+    checks.append((
+        "click -> shot",
+        "PASS" if gaps == 0 else "WARN",
+        f"{gaps} clicks without a later shot",
+    ))
+
+    harness = run / "harness.json"
+    checks.append(("harness.json", "PASS" if harness.exists() else "WARN", str(harness)))
+
+    print(f"audit {run}")
+    print(f"{'check':<24} {'status':<6} detail")
+    fails = warns = 0
+    for name, status, detail in checks:
+        print(f"{name:<24} {status:<6} {detail}")
+        fails += status == "FAIL"
+        warns += status == "WARN"
+
+    if events:
+        print("\nlast events:")
+        for e in events[-5:]:
+            print(f"  {e.get('ts','')} {e.get('action',''):<8} {e.get('result',''):<5} {e.get('target','')}")
+
+    return 1 if fails else 0
 
 
 def main():
     ap = argparse.ArgumentParser(prog="wt.py", description=__doc__)
+    ap.add_argument("--run", default=None, help="run directory for events.jsonl")
+    ap.add_argument("--profile", default=None, help="profile name (default: auto by OS)")
     sub = ap.add_subparsers(dest="cmd", required=True)
 
-    p = sub.add_parser("preflight", help="check platform prerequisites")
+    p = sub.add_parser("preflight", help="check platform prerequisites and capabilities")
     p.add_argument("--display", default=None)
     p.set_defaults(func=cmd_preflight)
+
+    p = sub.add_parser("profiles", help="list platform profiles")
+    p.set_defaults(func=cmd_profiles)
 
     p = sub.add_parser("new-run", help="create runs/<name>/{shots,logs,artifacts}")
     p.add_argument("name")
@@ -271,7 +504,7 @@ def main():
     p = sub.add_parser("shot", help="capture the screen")
     p.add_argument("out")
     p.add_argument("--display", default=None)
-    p.add_argument("--geometry", default="1440x900")
+    p.add_argument("--geometry", default=None)
     p.set_defaults(func=cmd_shot)
 
     p = sub.add_parser("click", help="click at screen coordinates")
@@ -283,8 +516,8 @@ def main():
 
     p = sub.add_parser("ocr", help="OCR an image and print words with boxes")
     p.add_argument("image")
-    p.add_argument("--lang", default="chi_sim+eng")
-    p.add_argument("--psm", type=int, default=11)
+    p.add_argument("--lang", default=None)
+    p.add_argument("--psm", type=int, default=None)
     p.add_argument("--min-conf", type=float, default=40)
     p.set_defaults(func=cmd_ocr)
 
@@ -300,10 +533,56 @@ def main():
     p.add_argument("--out", default="report.pdf")
     p.set_defaults(func=cmd_report)
 
+    p = sub.add_parser("audit", help="cross-check events, report and evidence")
+    p.add_argument("run_dir")
+    p.set_defaults(func=cmd_audit)
+
     a = ap.parse_args()
     if a.cmd == "launch" and not a.command:
         ap.error("launch needs a command")
-    return a.func(a)
+
+    run = resolve_run(a)
+    started = time.monotonic()
+    try:
+        result = a.func(a)
+        if isinstance(result, dict):
+            extra, rc = result, 0
+        elif isinstance(result, int):
+            extra, rc = {}, result
+        else:
+            extra, rc = {}, 0
+        if a.cmd != "audit":
+            log_event(
+                run,
+                action=a.cmd,
+                result="ok" if rc == 0 else "error",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                **extra,
+            )
+        return rc
+    except SystemExit as e:
+        code = e.code if isinstance(e.code, int) else 1
+        if a.cmd != "audit":
+            log_event(
+                run,
+                action=a.cmd,
+                result="error",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                detail=str(e),
+            )
+        if code:
+            print(e, file=sys.stderr)
+        return code
+    except Exception as e:
+        if a.cmd != "audit":
+            log_event(
+                run,
+                action=a.cmd,
+                result="error",
+                duration_ms=int((time.monotonic() - started) * 1000),
+                detail=f"{type(e).__name__}: {e}",
+            )
+        raise
 
 
 if __name__ == "__main__":

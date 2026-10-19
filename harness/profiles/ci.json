@@ -1,0 +1,12 @@
+{
+  "name": "ci",
+  "os": "Linux",
+  "screenshot": "ffmpeg-x11grab",
+  "click": "xdotool",
+  "ocr_lang": "eng",
+  "ocr_psm": 11,
+  "display": ":99",
+  "geometry": "1280x800",
+  "isolation": "Xvfb only; no interactive dialogs",
+  "notes": "Headless CI: avoid native file pickers, portal screenshots and permission dialogs."
+}
