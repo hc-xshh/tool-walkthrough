@@ -15,7 +15,7 @@
 | `templates/tool-profile.md` | 走查前的工具调研模板（事实卡 + 官方声明表） |
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 结果 / 证据） |
 | `templates/report.md` | 六节报告模板 |
-| `harness/` | 可执行工具：隔离 X11 桌面、CDP 驱动、截图 / OCR / 点击、整屏 portal 截图、PDF 出片、预检 |
+| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检）+ Linux 隔离桌面脚本 + CDP 驱动 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
 ## 不包含什么
@@ -27,7 +27,9 @@
 
 ## 依赖
 
-Linux（Ubuntu 22.04+ 实测）。需要 Xvfb、openbox、dbus、ffmpeg、xdotool、tesseract、Chrome/Chromium、Python 3 与三个 pip 包。
+Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.py` 走原生截图 / 点击，隔离靠独立用户或虚拟机。
+
+需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及三个 pip 包。Linux 额外需要 Xvfb、openbox、dbus、ffmpeg、xdotool。
 
 完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
 
@@ -38,38 +40,44 @@ Linux（Ubuntu 22.04+ 实测）。需要 Xvfb、openbox、dbus、ffmpeg、xdotoo
 #    产出 runs/<date>-<tool>/tool-profile.md；模板 templates/tool-profile.md
 #    来源优先级与 8 项清单见 METHOD.md 的 Step 0
 
-# 1. 起隔离桌面（默认 :98）
-./harness/desktop-up.sh :98 1440x900x24
-./harness/preflight.sh --display :98 --app <package-or-binary> --port 9339
+# 1. 建本轮目录（三平台）
+python3 harness/wt.py new-run 2026-10-19-<tool>
 
-# 2. 启动应用。默认用全新 HOME（首次体验）；
-#    需要登录态时：WALKTHROUGH_HOME=$HOME WALKTHROUGH_DBUS=unix:path=/run/user/$(id -u)/bus
-./harness/app-launch.sh /usr/bin/<app>
+# 2. 预检（三平台）
+python3 harness/wt.py preflight
 
-# 3. 原生 GUI：截图 / OCR 找坐标 / 点击
-./harness/shot.sh /tmp/walkthrough/01.png
-./harness/ocr.sh /tmp/walkthrough/01.png
-./harness/click.sh 300 241
+# 3. 启动应用
+#    Linux：默认全新 HOME；需要登录态时设 WALKTHROUGH_HOME / WALKTHROUGH_DBUS
+python3 harness/wt.py launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
+#    macOS：--app 走 `open -a`；Windows：直接传 exe 路径
+python3 harness/wt.py launch --app "Codex" --log runs/<run>/logs/app.log
 
-# 4. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
+# 4. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
+python3 harness/wt.py shot runs/<run>/shots/01.png
+python3 harness/wt.py ocr runs/<run>/shots/01.png
+python3 harness/wt.py click 300 241
+
+# 5. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
 #    启动时加 --remote-debugging-port=9339
 python3 harness/cdp.py text
 python3 harness/cdp.py clicktext "登录"
 python3 harness/cdp.py clickel "允许读取" --nth 0   # 选项带序号时按第 n 个匹配点
-python3 harness/cdp.py shot /tmp/walkthrough/02.png
-
-# 5. GNOME Wayland 整屏 / 原生弹窗（可选，需要用户授权一次）
-/usr/bin/python3 harness/portal-shot.py --out /tmp/walkthrough/full.png
+python3 harness/cdp.py shot runs/<run>/shots/02.png
 
 # 6. 出 PDF（中间 HTML 只写临时目录）
-./harness/build-report.py runs/<date>-<tool>
+python3 harness/wt.py report runs/<date>-<tool>
+
+# Linux 隔离桌面（可选；macOS / Windows 用独立用户或虚拟机）
+./harness/desktop-up.sh :98 1440x900x24
 ```
+
+> macOS / Windows 分支已经实现，但尚未在真机实测；第一次用先跑 `python3 harness/wt.py preflight`，按输出补依赖和权限。
 
 ## 日常工作流（单仓）
 
 公开仓同时是工作区；报告、截图和日志只留在本地：
 
-1. 建本轮目录：`./harness/new-run.sh 2026-10-19-<tool>`
+1. 建本轮目录：`python3 harness/wt.py new-run 2026-10-19-<tool>`
    （生成 `runs/<run>/{shots,logs,artifacts}`）
 2. 跑走查、写 `report.md`，产物放同一目录
 3. 只提交方法 / 模板 / harness 的改动；`runs/` 已被 `.gitignore` 忽略
@@ -81,11 +89,25 @@ python3 harness/cdp.py shot /tmp/walkthrough/02.png
 
 **备份**：`runs/` 只在本机，没有远程副本。换机、误删、硬盘故障都会丢；自己定期同步到外置盘或网盘。
 
+## 跨平台对照
+
+| 能力 | Linux | macOS | Windows |
+|---|---|---|---|
+| 截图 | `ffmpeg` x11grab | `screencapture` | PowerShell + .NET |
+| 点击 | `xdotool` | `cliclick`，没有则 AppleScript | `ctypes`（user32） |
+| OCR | tesseract | tesseract（brew） | tesseract（PATH） |
+| Electron / CDP | `cdp.py` | `cdp.py` | `cdp.py` |
+| 隔离 | Xvfb + 私有 DBus | 独立 macOS 用户或虚拟机 | 独立用户或虚拟机 |
+| 出 PDF | Chrome / Chromium | Chrome / Chromium / Edge | Chrome / Chromium / Edge |
+| Git 钩子 | bash | bash | Git Bash |
+
+macOS 需要给终端 / Hermes 开 **屏幕录制** 和 **辅助功能**；Windows 需要在交互式桌面会话里跑，服务账号的 session 0 截不到界面。
+
 ## 适配点
 
-- `preflight.sh --app <name>`：包名或可执行文件名；`--sandbox <path>` 指定 Electron 的 `chrome-sandbox`；`--home-dir <path>` 指定已有登录态目录。不传时会在 `/opt` 与 `$HOME` 下找候选，只报 WARN，不阻断。
-- 环境变量：`WALKTHROUGH_DISPLAY`（默认 `:98`）、`WALKTHROUGH_BASE`（默认 `/tmp/walkthrough`）、`WALKTHROUGH_HOME`、`WALKTHROUGH_DBUS`、`WALKTHROUGH_LOG`、`WALKTHROUGH_CHROME`（出 PDF 用的浏览器）。
-- `desktop-up.sh` 只负责 Xvfb + openbox + 私有 session bus；portal 截图走的是真实桌面会话，两者不要混着取证。
+- `python3 harness/wt.py preflight`：三平台统一预检（Python、tesseract、Chrome、截图/点击工具、Linux display）。
+- `wt.py shot|click|ocr|launch|new-run|report`：三平台统一入口；命令参数放在 `--` 之后（`launch --log x -- /path/app`）。
+- `preflight.sh`、`desktop-up.sh`、`app-launch.sh`、`shot.sh`、`click.sh`、`portal-shot.py` 是 Linux 原生脚本，保留兼容；跨平台优先用 `wt.py`。
 
 ## 方法要点
 

@@ -17,9 +17,45 @@ import os
 import pathlib
 import shutil
 import subprocess
+import sys
 import tempfile
 
 import markdown
+
+
+def find_chrome():
+    env = os.environ.get("WALKTHROUGH_CHROME")
+    if env and pathlib.Path(env).exists():
+        return env
+    if sys.platform == "darwin":
+        for p in (
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "/Applications/Chromium.app/Contents/MacOS/Chromium",
+            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+        ):
+            if pathlib.Path(p).exists():
+                return p
+    if sys.platform.startswith("win"):
+        bases = [
+            os.environ.get("ProgramFiles"),
+            os.environ.get("ProgramFiles(x86)"),
+            os.environ.get("LocalAppData"),
+        ]
+        rels = [
+            r"Google\Chrome\Application\chrome.exe",
+            r"Chromium\Application\chrome.exe",
+            r"Microsoft\Edge\Application\msedge.exe",
+        ]
+        for base in filter(None, bases):
+            for rel in rels:
+                p = pathlib.Path(base) / rel
+                if p.exists():
+                    return str(p)
+    for name in ("google-chrome", "chromium", "chromium-browser", "chrome", "msedge"):
+        p = shutil.which(name)
+        if p:
+            return p
+    return "google-chrome"
 
 
 def main():
@@ -75,10 +111,7 @@ def main():
         html_path = pathlib.Path(td) / "report.html"
         html_path.write_text(html, encoding="utf-8")
         out = (run / a.out).resolve()
-        chrome = (os.environ.get("WALKTHROUGH_CHROME")
-                  or shutil.which("google-chrome")
-                  or shutil.which("chromium")
-                  or "google-chrome")
+        chrome = find_chrome()
         subprocess.run([
             chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
             "--no-pdf-header-footer", f"--print-to-pdf={out}", f"file://{html_path}",

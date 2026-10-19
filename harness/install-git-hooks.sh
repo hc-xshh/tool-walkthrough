@@ -7,8 +7,9 @@ cd "$(git rev-parse --show-toplevel)"
 hooks_dir="$(git rev-parse --git-dir)/hooks"
 terms="$(git rev-parse --git-dir)/pii-terms"
 
-install -m 755 harness/git-hooks/pre-commit "$hooks_dir/pre-commit"
-install -m 755 harness/git-hooks/pre-push "$hooks_dir/pre-push"
+cp harness/git-hooks/pre-commit "$hooks_dir/pre-commit"
+cp harness/git-hooks/pre-push "$hooks_dir/pre-push"
+chmod +x "$hooks_dir/pre-commit" "$hooks_dir/pre-push"
 
 if [ ! -f "$terms" ]; then
   cat > "$terms" <<'EOF'
