@@ -31,6 +31,8 @@
 
 ## Environment
 
-- Launch Electron on Xvfb with `DISPLAY=:98`, `GDK_BACKEND=x11`, software rendering.
-- Same HOME = single-instance lock; kill the real-desktop instance first.
+- Linux: launch Electron on Xvfb with `DISPLAY=:98`, `GDK_BACKEND=x11`, software rendering.
+- macOS / Windows: no Xvfb; use `wt.py launch|shot|click` and isolate with a separate user account or VM.
+- Same HOME / same account = single-instance lock; close the real-desktop instance first.
 - After a completed task, try a second task before declaring the run done.
+- macOS needs Screen Recording + Accessibility for the terminal/agent; Windows needs an interactive desktop session.

@@ -8,7 +8,7 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py shot out.png
   python3 harness/wt.py click 300 241
   python3 harness/wt.py ocr out.png
-  python3 harness/wt.py launch /path/to/app --log /tmp/app.log
+  python3 harness/wt.py launch --log /tmp/app.log -- /path/to/app
   python3 harness/wt.py report runs/2026-10-19-tool
 
 Linux uses X11 tooling (ffmpeg/xdotool). macOS uses screencapture and
