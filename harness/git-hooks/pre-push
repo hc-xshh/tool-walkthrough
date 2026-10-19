@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# Re-check the committed tree before it leaves the machine.
+set -u
+
+fail=0
+block() { printf 'BLOCKED: %s\n' "$*" >&2; fail=1; }
+
+# 1. tracked paths and file types at HEAD
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    runs|runs/*) block "tracked evidence path: $f" ;;
+  esac
+  ext="${f##*.}"
+  case "$ext" in
+    png|PNG|jpg|JPG|jpeg|JPEG|webp|WEBP|gif|GIF|pdf|PDF|log|LOG|docx|DOCX|xlsx|XLSX|pptx|PPTX|zip|ZIP|deb|DEB|dmg|DMG)
+      block "tracked binary/evidence file: $f" ;;
+  esac
+done < <(git ls-tree -r --name-only HEAD)
+
+# 2. generic PII patterns in the committed tree
+pattern='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|/home/[A-Za-z0-9._-]+|feishu\.cn/docx|machine_id[=]'
+if hits=$(git grep -n -I -E "$pattern" HEAD -- . 2>/dev/null) && [ -n "$hits" ]; then
+  echo "$hits" >&2
+  block "PII pattern in committed tree"
+fi
+
+# 3. local-only terms
+terms_file="$(git rev-parse --git-dir)/pii-terms"
+if [ -f "$terms_file" ]; then
+  while IFS= read -r term; do
+    case "$term" in ''|'#'*) continue ;; esac
+    if hits=$(git grep -n -I -F -- "$term" HEAD -- . 2>/dev/null) && [ -n "$hits" ]; then
+      echo "$hits" >&2
+      block "local term '$term' in committed tree"
+    fi
+  done < "$terms_file"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "Push refused. Fix the tree or remove the commit; do not use --no-verify." >&2
+  exit 1
+fi
+exit 0

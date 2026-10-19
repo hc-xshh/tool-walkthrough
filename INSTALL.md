@@ -46,7 +46,24 @@ bash harness/preflight.sh --display :98 --app <package-or-binary> --port 9339
 - `CDP WARN` → 应用还没带 `--remote-debugging-port` 启动
 - `disk $HOME FAIL` → 至少留 5 GB（安装包 + 截图）
 
-## 4. 常见问题
+## 4. Git 钩子（公开仓必做）
+
+```bash
+./harness/install-git-hooks.sh
+```
+
+然后把你的账号名、邮箱、本机用户名写进本地黑名单（只存在 `.git/`，不会提交）：
+
+```bash
+cat >> .git/pii-terms <<'EOF'
+your-handle
+<your-email>
+EOF
+```
+
+钩子会拦住 `runs/`、图片 / PDF / 日志 / docx / zip、邮箱、`/home/<user>`、飞书文档链接、`machine_id` 参数。它防手滑，不防 `--no-verify`。
+
+## 5. 常见问题
 
 **应用起来了但截图全黑 / 窗口不可见**
 Xvfb 里只认 X11。Electron 在真实 Wayland 会话里要加 `--ozone-platform=wayland`；在 Xvfb 里相反，`env -u WAYLAND_DISPLAY DISPLAY=:98` 启动即可。GTK / WebKitGTK 应用需要 `GDK_BACKEND=x11`（`app-launch.sh` 已设）。

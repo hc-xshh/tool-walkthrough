@@ -65,6 +65,22 @@ python3 harness/cdp.py shot /tmp/walkthrough/02.png
 ./harness/build-report.py runs/<date>-<tool>
 ```
 
+## 日常工作流（单仓）
+
+公开仓同时是工作区；报告、截图和日志只留在本地：
+
+1. 建本轮目录：`./harness/new-run.sh 2026-10-19-<tool>`
+   （生成 `runs/<run>/{shots,logs,artifacts}`）
+2. 跑走查、写 `report.md`，产物放同一目录
+3. 只提交方法 / 模板 / harness 的改动；`runs/` 已被 `.gitignore` 忽略
+4. 首次 clone 后跑一次 `./harness/install-git-hooks.sh`
+
+钩子会拦：`runs/` 路径、图片 / PDF / 日志 / docx / zip 等证据文件、邮箱、`/home/<user>`、飞书文档链接、`machine_id` 参数，以及 `.git/pii-terms` 里自己加的账号名。
+
+不要 `git add -f runs/`，不要 `git clean -xdf`（会删掉未跟踪的证据）。
+
+**备份**：`runs/` 只在本机，没有远程副本。换机、误删、硬盘故障都会丢；自己定期同步到外置盘或网盘。
+
 ## 适配点
 
 - `preflight.sh --app <name>`：包名或可执行文件名；`--sandbox <path>` 指定 Electron 的 `chrome-sandbox`；`--home-dir <path>` 指定已有登录态目录。不传时会在 `/opt` 与 `$HOME` 下找候选，只报 WARN，不阻断。

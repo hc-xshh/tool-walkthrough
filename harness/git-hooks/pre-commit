@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+# Refuse evidence files and obvious PII before they enter the public repo.
+set -u
+
+fail=0
+block() { printf 'BLOCKED: %s\n' "$*" >&2; fail=1; }
+
+staged=$(git diff --cached --name-only --diff-filter=ACM)
+[ -z "$staged" ] && exit 0
+
+# 1. paths and file types
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  case "$f" in
+    runs|runs/*) block "evidence directory is local-only: $f" ;;
+  esac
+  ext="${f##*.}"
+  case "$ext" in
+    png|PNG|jpg|JPG|jpeg|JPEG|webp|WEBP|gif|GIF|pdf|PDF|log|LOG|docx|DOCX|xlsx|XLSX|pptx|PPTX|zip|ZIP|deb|DEB|dmg|DMG)
+      block "binary/evidence file type: $f" ;;
+  esac
+done <<EOF
+$staged
+EOF
+
+# 2. generic PII patterns in staged text
+pattern='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}|/home/[A-Za-z0-9._-]+|feishu\.cn/docx|machine_id[=]'
+if hits=$(git grep --cached -n -I -E "$pattern" -- . 2>/dev/null) && [ -n "$hits" ]; then
+  echo "$hits" >&2
+  block "PII pattern in staged content"
+fi
+
+# 3. local-only terms (.git/pii-terms, never committed)
+terms_file="$(git rev-parse --git-dir)/pii-terms"
+if [ -f "$terms_file" ]; then
+  while IFS= read -r term; do
+    case "$term" in ''|'#'*) continue ;; esac
+    if hits=$(git grep --cached -n -I -F -- "$term" -- . 2>/dev/null) && [ -n "$hits" ]; then
+      echo "$hits" >&2
+      block "local term '$term' in staged content"
+    fi
+  done < "$terms_file"
+fi
+
+if [ "$fail" -ne 0 ]; then
+  echo "Commit refused. Unstage with 'git reset'; do not use --no-verify." >&2
+  exit 1
+fi
+exit 0
