@@ -20,7 +20,7 @@ sudo apt-get install -y \
 ```
 
 - `chromium-browser` 用于出 PDF；已装 Google Chrome 可跳过，脚本会自动找。
-- Wayland 桌面里 Qoder 跑在 Xwayland：先取当前会话的 auth 文件，再预检。
+- Wayland 桌面里 Electron 应用通常跑在 Xwayland：先取当前会话的 auth 文件，再预检。
 
 ```bash
 export DISPLAY=:0
