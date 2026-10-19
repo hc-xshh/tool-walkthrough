@@ -50,7 +50,7 @@ python3 harness/wt.py preflight
 #    Linux：默认全新 HOME；需要登录态时设 WALKTHROUGH_HOME / WALKTHROUGH_DBUS
 python3 harness/wt.py launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
 #    macOS：--app 走 `open -a`；Windows：直接传 exe 路径
-python3 harness/wt.py launch --app "Codex" --log runs/<run>/logs/app.log
+python3 harness/wt.py launch --app "<AppName>" --log runs/<run>/logs/app.log
 
 # 4. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
 python3 harness/wt.py shot runs/<run>/shots/01.png
@@ -101,7 +101,7 @@ python3 harness/wt.py report runs/<date>-<tool>
 | 出 PDF | Chrome / Chromium | Chrome / Chromium / Edge | Chrome / Chromium / Edge |
 | Git 钩子 | bash | bash | Git Bash |
 
-macOS 需要给终端 / Hermes 开 **屏幕录制** 和 **辅助功能**；Windows 需要在交互式桌面会话里跑，服务账号的 session 0 截不到界面。
+macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；Windows 需要在交互式桌面会话里跑，服务账号的 session 0 截不到界面。
 
 ## 适配点
 

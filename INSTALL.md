@@ -29,7 +29,7 @@ brew install tesseract tesseract-lang cliclick
 - `tesseract-lang` 包含 `chi_sim`；`cliclick` 用于坐标点击，没装时 `wt.py` 会退回 AppleScript。
 - 截图用系统自带的 `screencapture`，不需要额外安装。
 - 安装 Chrome 或 Chromium 用于出 PDF；Edge 也可作为兜底。
-- **权限**：系统设置 → 隐私与安全性 → 给 Terminal / Hermes 开 **屏幕录制** 和 **辅助功能**；否则截图黑屏、点击无效。
+- **权限**：系统设置 → 隐私与安全性 → 给 Terminal / agent 进程开 **屏幕录制** 和 **辅助功能**；否则截图黑屏、点击无效。
 - **隔离**：不要用主力账号直接跑。新建一个 macOS 用户，或用虚拟机；`HOME` 覆盖在 macOS 上不可靠，不建议用。
 - Apple Silicon 与 Intel 都用系统 Python 3 或 `brew install python`。
 
