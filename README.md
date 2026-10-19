@@ -107,11 +107,13 @@ python3 harness/wt.py audit runs/<run>
 **Profiles**：
 
 ```bash
-python3 harness/wt.py profiles          # 列出 linux-x11 / macos / windows / ci
-python3 harness/wt.py --profile ci preflight
+python3 harness/wt.py profiles          # 列出 linux-desktop / linux-x11 / macos / windows / ci
+python3 harness/wt.py --profile linux-desktop preflight
 ```
 
-profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选。
+profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选（Linux 默认 `linux-desktop`，Xvfb 用 `linux-x11`）。
+
+**真实桌面优先**：全量走查默认在现有 GNOME 会话跑。`linux-desktop` 用 `DISPLAY=:0` + Xwayland auth，保留 GPU、原生文件选择器、通知、桌面宠物和电脑操控。`linux-x11` 只用于 CI / 无人值守冒烟；真实桌面上不要加 `--disable-gpu`，否则动画和滚动会变慢，观感结论会失真。
 
 **版本锚定**：`harness/harness.lock` 记录 `wt_version`、最低 Python / tesseract 版本和已实测平台；`preflight` 会对照它给出 WARN。报告附录建议带上 `harness.json` 的版本信息。
 

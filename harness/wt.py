@@ -37,7 +37,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OS = platform.system()  # Linux / Darwin / Windows
-WT_VERSION = "1.1.0"
+WT_VERSION = "1.2.0"
 PROFILES_DIR = ROOT / "harness" / "profiles"
 LOCK_FILE = ROOT / "harness" / "harness.lock"
 
@@ -83,7 +83,7 @@ def find_chrome():
 
 def load_profile(name):
     if not name or name == "auto":
-        name = {"Linux": "linux-x11", "Darwin": "macos", "Windows": "windows"}.get(OS, "linux-x11")
+        name = {"Linux": "linux-desktop", "Darwin": "macos", "Windows": "windows"}.get(OS, "linux-desktop")
     path = PROFILES_DIR / f"{name}.json"
     if not path.exists():
         raise SystemExit(f"unknown profile: {name} (looked in {PROFILES_DIR})")

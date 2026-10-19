@@ -6,19 +6,30 @@ Linux 已实测（Ubuntu 22.04 / 24.04 / 26.04）；macOS 与 Windows 的 `wt.py
 
 ## 1. Linux（Ubuntu / Debian）
 
+**默认在真实桌面跑。** 全量走查要覆盖原生文件选择器、系统通知、桌面宠物、电脑操控，这些必须在真实会话验证；Xvfb 只用于 CI / 无人值守冒烟。
+
 ```bash
 sudo apt-get update
 sudo apt-get install -y \
-  xvfb openbox dbus-x11 x11-utils xdotool \
+  x11-utils xdotool \
   ffmpeg tesseract-ocr tesseract-ocr-chi-sim \
   fonts-noto-cjk \
-  python3-gi gir1.2-gtk-3.0 \
   chromium-browser
+# 只有跑 Xvfb / CI 时才需要：
+# xvfb openbox dbus-x11 python3-gi gir1.2-gtk-3.0
 ```
 
-- `python3-gi` / `gir1.2-gtk-3.0` 只在用 `portal-shot.py`（GNOME Wayland 整屏截图）时需要。
 - `chromium-browser` 用于出 PDF；已装 Google Chrome 可跳过，脚本会自动找。
-- 其他发行版换成对应包管理器；核心依赖是 Xvfb、openbox、dbus、ffmpeg、xdotool、tesseract。
+- Wayland 桌面里 Qoder 跑在 Xwayland：先取当前会话的 auth 文件，再预检。
+
+```bash
+export DISPLAY=:0
+export XAUTHORITY=$(ls /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | head -1)
+python3 harness/wt.py --profile linux-desktop preflight
+```
+
+- 无头 / CI 才用 Xvfb：`./harness/desktop-up.sh :98 1440x900x24`，然后 `--profile linux-x11`。
+- 真实桌面下不要加 `--disable-gpu`；软件渲染会让动画和滚动明显变慢，影响观感结论。
 
 ## 2. macOS
 
