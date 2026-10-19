@@ -94,6 +94,7 @@ python3 harness/wt.py report runs/<date>-<tool>
 **事件日志**：带 `--run runs/<run>`（或环境变量 `WALKTHROUGH_RUN`）的命令会往 `runs/<run>/events.jsonl` 追加一行：
 `ts / os / action / result / duration_ms / target / screenshot / detail`。
 `new-run` 会同时写 `harness.json`，记录本轮实际用的 profile、OS、Python、tesseract、Chrome 版本。
+`cdp.py` 也读 `WALKTHROUGH_RUN`，写 `cdp:text` / `cdp:click` / `cdp:shot` 等事件；跑 CDP 前先 `export WALKTHROUGH_RUN=runs/<run>`。
 
 **审计**：
 

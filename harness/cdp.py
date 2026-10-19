@@ -15,11 +15,19 @@ Launch the app with --remote-debugging-port=<port>, then:
 Why: a WebView/Electron UI is a DOM. Reading it beats OCR, and clicking by
 label beats guessing coordinates. Use this before falling back to
 ffmpeg + tesseract on the X11 desktop.
+
+If WALKTHROUGH_RUN is set, each operation appends one line to
+<run>/events.jsonl so `wt.py audit` can see CDP steps too.
 """
 import argparse
 import base64
 import json
+import os
+import platform
 import sys
+import time
+from datetime import datetime
+from pathlib import Path
 
 try:
     import requests
@@ -28,6 +36,29 @@ except ImportError as exc:  # actionable error when another project venv is acti
     raise SystemExit(
         f"missing dependency: {exc.name}; run: pip install -r harness/requirements.txt"
     )
+
+
+def _log(op, target, status, started, screenshot=None, detail=""):
+    run = os.environ.get("WALKTHROUGH_RUN")
+    if not run:
+        return
+    path = Path(run).expanduser().resolve()
+    path.mkdir(parents=True, exist_ok=True)
+    rec = {
+        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "os": platform.system(),
+        "action": f"cdp:{op}",
+        "result": status,
+        "duration_ms": int((time.monotonic() - started) * 1000),
+        "target": str(target or "")[:200].replace("\n", " "),
+    }
+    if screenshot:
+        rec["screenshot"] = str(screenshot)
+    if detail:
+        rec["detail"] = str(detail)[:300]
+    with open(path / "events.jsonl", "a", encoding="utf-8") as fh:
+        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
+
 
 def page_ws(port, match=None):
     tabs = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=5).json()
@@ -69,58 +100,69 @@ def main():
                     help="pick the first page target whose URL contains this string (e.g. app://renderer)")
     a = ap.parse_args()
 
-    c = CDP(a.port, a.match)
-    if a.op == "text":
-        print((c.eval("document.body.innerText") or "")[:6000])
-    elif a.op == "eval":
-        print(json.dumps(c.eval(a.arg), ensure_ascii=False))
-    elif a.op == "click":
-        sel = json.dumps(a.arg)
-        print(c.eval(f"""(() => {{
-          const el = document.querySelector({sel});
-          if (!el) return 'not found';
-          el.scrollIntoView({{block:'center'}}); el.click();
-          return 'clicked: ' + (el.innerText || el.tagName).slice(0,40);
-        }})()"""))
-    elif a.op in ("clicktext", "clickel"):
-        want = json.dumps(a.arg)
-        pick = "hits[hits.length - 1]" if a.nth is None else f"hits[{a.nth}]"
-        rect = c.eval(f"""(() => {{
-          const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
-          let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
-          if (!hits.length) hits = all.filter(e => (e.innerText || '').includes({want})
-              && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null);
-          const el = {pick};
-          if (!el) return null;
-          el.scrollIntoView({{block:'center'}});
-          const r = el.getBoundingClientRect();
-          return {{x: r.x + r.width / 2, y: r.y + r.height / 2, text: (el.innerText || '').slice(0, 40)}};
-        }})()""")
-        if not rect:
-            print("not found")
-            return
-        if a.op == "clicktext":
-            c.eval(f"""(() => {{
+    started = time.monotonic()
+    status, detail, shot_path = "ok", "", None
+
+    try:
+        c = CDP(a.port, a.match)
+        if a.op == "text":
+            print((c.eval("document.body.innerText") or "")[:6000])
+        elif a.op == "eval":
+            print(json.dumps(c.eval(a.arg), ensure_ascii=False))
+        elif a.op == "click":
+            sel = json.dumps(a.arg)
+            print(c.eval(f"""(() => {{
+              const el = document.querySelector({sel});
+              if (!el) return 'not found';
+              el.scrollIntoView({{block:'center'}}); el.click();
+              return 'clicked: ' + (el.innerText || el.tagName).slice(0,40);
+            }})()"""))
+        elif a.op in ("clicktext", "clickel"):
+            want = json.dumps(a.arg)
+            pick = "hits[hits.length - 1]" if a.nth is None else f"hits[{a.nth}]"
+            rect = c.eval(f"""(() => {{
               const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
               let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
               if (!hits.length) hits = all.filter(e => (e.innerText || '').includes({want})
                   && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null);
-              {pick}.click();
+              const el = {pick};
+              if (!el) return null;
+              el.scrollIntoView({{block:'center'}});
+              const r = el.getBoundingClientRect();
+              return {{x: r.x + r.width / 2, y: r.y + r.height / 2, text: (el.innerText || '').slice(0, 40)}};
             }})()""")
+            if not rect:
+                print("not found")
+                status, detail = "error", "not found"
+                return
+            if a.op == "clicktext":
+                c.eval(f"""(() => {{
+                  const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
+                  let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
+                  if (!hits.length) hits = all.filter(e => (e.innerText || '').includes({want})
+                      && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null);
+                  {pick}.click();
+                }})()""")
+            else:
+                for t in ("mousePressed", "mouseReleased"):
+                    c.cmd("Input.dispatchMouseEvent", {"type": t, "x": rect["x"], "y": rect["y"],
+                                                       "button": "left", "clickCount": 1})
+            print("clicked", rect["text"], "at %.0f,%.0f" % (rect["x"], rect["y"]))
+        elif a.op == "shot":
+            r = c.cmd("Page.captureScreenshot", {"format": "png"})
+            open(a.arg, "wb").write(base64.b64decode(r["result"]["data"]))
+            shot_path = a.arg
+            print(a.arg)
+        elif a.op == "info":
+            for t in requests.get(f"http://127.0.0.1:{a.port}/json/list", timeout=5).json():
+                print(t.get("type"), "|", t.get("title"), "|", t.get("url", "")[:100])
         else:
-            for t in ("mousePressed", "mouseReleased"):
-                c.cmd("Input.dispatchMouseEvent", {"type": t, "x": rect["x"], "y": rect["y"],
-                                                   "button": "left", "clickCount": 1})
-        print("clicked", rect["text"], "at %.0f,%.0f" % (rect["x"], rect["y"]))
-    elif a.op == "shot":
-        r = c.cmd("Page.captureScreenshot", {"format": "png"})
-        open(a.arg, "wb").write(base64.b64decode(r["result"]["data"]))
-        print(a.arg)
-    elif a.op == "info":
-        for t in requests.get(f"http://127.0.0.1:{a.port}/json/list", timeout=5).json():
-            print(t.get("type"), "|", t.get("title"), "|", t.get("url", "")[:100])
-    else:
-        print(__doc__)
+            print(__doc__)
+    except Exception as e:
+        status, detail = "error", f"{type(e).__name__}: {e}"
+        raise
+    finally:
+        _log(a.op, a.arg, status, started, screenshot=shot_path, detail=detail)
 
 
 if __name__ == "__main__":
