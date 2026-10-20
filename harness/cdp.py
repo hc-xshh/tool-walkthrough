@@ -11,6 +11,14 @@ Launch the app with --remote-debugging-port=<port>, then:
   cdp.py clickel '<label>' --nth 1  # pick the 2nd visible match (0-based)
   cdp.py shot out.png          # renderer screenshot
   cdp.py info                  # list page targets
+  cdp.py frames                # list every target, incl. webview iframes
+  cdp.py --kind iframe --nested text   # VS Code / IDE webview panels
+
+Webview panels (VS Code extensions, some IDE sidebars) are not `page` targets
+and cannot be read from the host page: probe with `frames`, then drive the
+iframe target directly. Their content often lives one level deeper, so
+`--nested` swaps `document` for the inner iframe document.
+
 
 Why: a WebView/Electron UI is a DOM. Reading it beats OCR, and clicking by
 label beats guessing coordinates. Use this before falling back to
@@ -60,21 +68,23 @@ def _log(op, target, status, started, screenshot=None, detail=""):
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def page_ws(port, match=None):
+def page_ws(port, match=None, kind="page"):
     tabs = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=5).json()
-    pages = [t for t in tabs if t.get("type") == "page"]
+    kinds = ("page", "iframe") if kind == "any" else (kind,)
+    pages = [t for t in tabs if t.get("type") in kinds]
     if match:
         pages = [t for t in pages if match in (t.get("url") or "")]
     if not pages:
-        raise SystemExit("no page target on port %s%s" % (port, f" matching {match!r}" if match else ""))
+        raise SystemExit("no %s target on port %s%s" % (kind, port, f" matching {match!r}" if match else ""))
     return pages[0]["webSocketDebuggerUrl"]
 
 
 class CDP:
-    def __init__(self, port, match=None):
+    def __init__(self, port, match=None, kind="page", nested=False):
         # suppress_origin: Chrome rejects the default websocket Origin with 403
-        self.ws = websocket.create_connection(page_ws(port, match), timeout=30, suppress_origin=True)
+        self.ws = websocket.create_connection(page_ws(port, match, kind), timeout=30, suppress_origin=True)
         self.n = 0
+        self.nested = nested
 
     def cmd(self, method, params=None):
         self.n += 1
@@ -85,6 +95,10 @@ class CDP:
                 return msg
 
     def eval(self, expr):
+        if self.nested:
+            # VS Code webview: real UI sits in an inner iframe one level down
+            expr = ("(() => { const DOC = document.querySelector('iframe')?.contentDocument || document;"
+                    f" return ({expr.replace('document', 'DOC')}); }})()")
         r = self.cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True})
         return r.get("result", {}).get("result", {}).get("value")
 
@@ -98,13 +112,17 @@ def main():
                     help="0-based match index for clicktext/clickel (default: last)")
     ap.add_argument("--match", default=None,
                     help="pick the first page target whose URL contains this string (e.g. app://renderer)")
+    ap.add_argument("--kind", default="page", choices=["page", "iframe", "any"],
+                    help="target type to attach to; IDE webview panels live in 'iframe'")
+    ap.add_argument("--nested", action="store_true",
+                    help="evaluate inside the first inner iframe (VS Code webview payload)")
     a = ap.parse_args()
 
     started = time.monotonic()
     status, detail, shot_path = "ok", "", None
 
     try:
-        c = CDP(a.port, a.match)
+        c = CDP(a.port, a.match, a.kind, a.nested)
         if a.op == "text":
             print((c.eval("document.body.innerText") or "")[:6000])
         elif a.op == "eval":
@@ -186,6 +204,10 @@ def main():
         elif a.op == "info":
             for t in requests.get(f"http://127.0.0.1:{a.port}/json/list", timeout=5).json():
                 print(t.get("type"), "|", t.get("title"), "|", t.get("url", "")[:100])
+        elif a.op == "frames":
+            for t in requests.get(f"http://127.0.0.1:{a.port}/json/list", timeout=5).json():
+                if t.get("type") in ("page", "iframe"):
+                    print(t.get("type"), "|", (t.get("title") or "")[:40], "|", (t.get("url") or "")[:100])
         else:
             print(__doc__)
     except Exception as e:
