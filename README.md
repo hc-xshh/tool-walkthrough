@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v3**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
+当前方法版本：**v4**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
 
 > 回答的不是「界面好不好看」，而是一个决策问题：**这个版本能不能上、能不能推给团队、上线前先修哪三件。**
 > n=1 是探索性观察，不外推；报告是决策材料，不是过程记录。
@@ -14,7 +14,8 @@
 | `METHOD.md` | 方法本体：6 步流程、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
 | `templates/tool-profile.md` | 走查前的工具调研模板（事实卡 + 官方声明表） |
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 结果 / 证据） |
-| `templates/report.md` | 六节报告模板 |
+| `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
+| `templates/report.md` | 七节报告模板 |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检）+ Linux 隔离桌面脚本 + CDP 驱动 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
