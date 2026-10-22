@@ -743,37 +743,58 @@ def read_ui_map(run):
         cover_idx = header.get("覆盖任务")
         note_idx = header.get("备注")
         state_idx = header.get("状态")
+        region_idx = header.get("区域")
+        type_idx = header.get("类型")
         covers = cells[cover_idx] if cover_idx is not None and cover_idx < len(cells) else ""
         note = cells[note_idx] if note_idx is not None and note_idx < len(cells) else ""
         state = cells[state_idx] if state_idx is not None and state_idx < len(cells) else ""
+        region = cells[region_idx] if region_idx is not None and region_idx < len(cells) else ""
+        kind = cells[type_idx] if type_idx is not None and type_idx < len(cells) else ""
         task_ids = re.findall(r"T\d+", covers)
         controls.append({
             "id": uid, "screen": screen, "covers": task_ids,
-            "note": note.strip(), "state": state,
+            "note": note.strip(), "state": state, "region": region.strip(), "type": kind.strip(),
         })
     return controls
 
 
-def count_nav_edges(run):
-    """Rows in the '## 导航' table (从 / 控件 / 到)."""
+def read_nav_edges(run):
+    """Rows of the '## 导航' table as {'from', 'control', 'to'} dicts."""
     path = run / "ui-map.md"
     if not path.exists():
-        return 0
+        return []
     text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
-    in_nav = False
-    edges = 0
+    in_nav, header = False, None
+    edges = []
     for raw in text.splitlines():
         line = raw.strip()
         if line.startswith("## "):
             in_nav = line[3:].strip().startswith("导航")
+            header = None
             continue
         if not in_nav or not line.startswith("|"):
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
-        if not cells or cells[0] in ("从", "") or all(set(c) <= set("-: ") for c in cells):
+        if header is None:
+            header = {c: i for i, c in enumerate(cells)}
             continue
-        edges += 1
+        if all(set(c) <= set("-: ") for c in cells):
+            continue
+        idx = {k: header.get(k) for k in ("从", "控件", "到")}
+        vals = {k: (cells[i] if i is not None and i < len(cells) else "") for k, i in idx.items()}
+        if not vals["从"] and not vals["到"]:
+            continue
+        edges.append({"from": vals["从"], "control": vals["控件"], "to": vals["到"]})
     return edges
+
+
+def count_nav_edges(run):
+    return len(read_nav_edges(run))
+
+
+ENTRY_REGIONS = ("左侧栏", "导航栏", "底部栏")
+MENU_TYPES = ("menu", "menubar", "下拉", "菜单")
+NO_NEW_SCREEN = ("不产生新屏", "不新开屏", "同屏", "切换本屏", "留在本屏", "就地", "不测")
 
 
 def crawl_issues(run, cov):
@@ -799,10 +820,30 @@ def crawl_issues(run, cov):
             issues.append(f"{name}: no task covers this screen")
 
     if cov["screen_count"] > 1:
-        edges = count_nav_edges(run)
+        edges = read_nav_edges(run)
         need = cov["screen_count"] - 1
-        if edges < need:
-            issues.append(f"navigation table has {edges} edge(s), need at least {need} for {cov['screen_count']} screens")
+        if len(edges) < need:
+            issues.append(f"navigation table has {len(edges)} edge(s), need at least {need} for {cov['screen_count']} screens")
+
+    known = set(cov["screens"])
+    for e in edges:
+        if e["to"] and e["to"] not in known:
+            issues.append(f"nav edge points at {e['to']!r}, which has no section in ui-map.md")
+
+    # first-level entries: left-rail rows and top-bar menus must lead somewhere
+    for c in cov["controls"]:
+        is_entry = c["region"] in ENTRY_REGIONS or (
+            c["region"] in ("顶部栏", "顶栏") and c["type"].lower() in MENU_TYPES
+        )
+        if not is_entry:
+            continue
+        if any(e["control"] == c["id"] for e in edges):
+            continue
+        if any(word in c["note"] for word in NO_NEW_SCREEN):
+            continue
+        issues.append(
+            f"first-level entry {c['id']} ({c['region']} {c['type']}) has no screen behind it and no reason"
+        )
     return issues
 
 

@@ -74,8 +74,10 @@
 | 每屏有任务 | 该屏至少一个控件挂了任务 | 报 `no task covers this screen` |
 | 界面有编号 | 节标题以 `S\d+` 开头 | 报 `has no S-number` |
 | 导航连通 | 导航表行数 ≥ 界面数 − 1 | 报 `navigation table has N edge(s), need M` |
+| 导航指向真实界面 | 导航表的「到」必须是地图里存在的屏 | 报 `nav edge points at 'S4', which has no section` |
+| **一级入口都有屏** | 左侧栏每个入口、顶部每个菜单，要么在导航表里有一条边，要么备注写「不产生新屏 / 不测」 | 报 `first-level entry U24 (左侧栏 按钮) has no screen behind it and no reason` |
 | 控件有归属 | 每个控件有任务或原因 | 报未归属清单 |
-| 任务量 | 任务数 8–15 | `audit` 的 `task count` 给 WARN |
+| 任务量 | 填了结果的任务行 8–15 | `audit` 的 `task count` 给 WARN |
 
 这些都在 `wt.py coverage`（`--strict` 退非 0）与 `audit` 的 `ui coverage` / `task count` 里。
 
@@ -248,6 +250,7 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 - [ ] 有 `tool-profile.md`：来源带 URL 与日期，官方说法与实测分开 🤖（存在性）
 - [ ] 有 `ui-map.md`：**遍历过**每个界面（不是只看首屏），可交互控件都列了，每个都有归属任务或「不测 + 原因」 🤖（结构）/ 人（是否真走遍）
 - [ ] 地图里有导航表：界面之间的入口与返回路径都记了 🤖（行数够不够）
+- [ ] 一级入口都有屏：左侧栏每个入口、顶部每个菜单，要么有目标屏，要么写了「不产生新屏 / 不测」 🤖
 - [ ] `wt.py coverage` 没有未归属控件（或每条都有原因） 🤖
 - [ ] 每个界面至少有一条任务覆盖，不只是首屏 🤖
 - [ ] 每屏有首访图 `screens/<S 编号>-*.png` 🤖

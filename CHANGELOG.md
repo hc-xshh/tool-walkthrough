@@ -10,7 +10,7 @@
 - `wt.py coverage [--strict]`：解析 `ui-map.md`，按界面统计控件与归属，列出既无任务也无原因的控件，交叉检查任务 ID 是否存在；`audit` 的 `ui coverage` 同时报界面数与控件数。
 - 修复 `cdp.py clicktext/clickel` 的包含匹配：改为**最短标签优先**，否则点「文件」会被「选择文件夹（可选）」抢走。
 - `new-run` 多复制一份 `templates/ui-map.md`（含导航表与注释示例）、建 `screens/` 与 `logs/crawl-notes.txt`；`templates/task-plan.md` 增加「覆盖控件」列与「未覆盖控件」表。
-- **遍历防偷懒检查**：`coverage` 现在不只数控件，还查「每屏有首访图（`screens/<S 编号>-*.png`）、每屏有任务、界面带 S 编号、导航表行数 ≥ 界面数 − 1」；`audit` 新增 `task count`（8–15）。`--strict` 下这些都给非 0。
+- **遍历防偷懒检查**：`coverage` 现在不只数控件，还查「每屏有首访图（`screens/<S 编号>-*.png`）、每屏有任务、界面带 S 编号、导航表行数 ≥ 界面数 − 1、导航目标必须存在」，以及**一级入口覆盖**——左侧栏每个入口和顶部每个菜单，要么在导航表里有一条边，要么备注写「不产生新屏 / 不测」；`audit` 新增 `task count`（只数填了结果的行，8–15）。`--strict` 下这些都给非 0。
 
 ## Unreleased
 
