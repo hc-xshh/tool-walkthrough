@@ -12,6 +12,9 @@
 - `preflight` 检查 `chi_sim` 语言包、`xdpyinfo` 与 CDP 依赖；`events.jsonl` / 边车读取容忍 BOM（否则首行解析失败会静默丢事件）。
 - `new-run` 预置 `trace/`、`logs/task-trace.txt` 并复制四个模板；`launch --app` 可以不带命令（macOS）。
 - 文档与模板对齐：`harness.json` 替代 `meta.json`；S3 补复核字段；任务 trace 补耗时列与 `logs/task-trace.txt` 落点；调研补能力清单与原文摘录；任务矩阵补备注列与实景任务样例。
+- **报告可读性**（按 TRAE CN 实跑反馈改）：`report.md` 模板改为「行为先行 → 图 → 为什么算问题 → 建议」，图必须放在对应发现下面；`build-report.py` 的附录改为**可选**（`--appendix`），未引用的截图默认不进 PDF，图号在正文内连续；METHOD 补 5.1 节「让人愿意读」与两条质量清单。
+- **截图涂白**：`wt.py report --redact X,Y,W,H`（可重复）与 `captions.json` 的 `redact`（支持 `*` 通配和单图多条）；涂白是改写像素（依赖 Pillow，已加入 `requirements.txt`），不是盖白块——后者能从 PDF 里把原图抠出来。
+- `wt.py report` 透传 `--redact` / `--exclude` / `--appendix` / `--max-figure-height`；`click` 默认点击即截图（`--capture` / `--no-capture`），`cdp.py` 新增 `--capture`；`audit` 把「点击自带且文件存在」的截图算作已配对。
 - README / INSTALL / METHOD 澄清真实桌面与软件渲染边界：`linux-desktop` 保留 GPU，`linux-x11` 与 `ci` 才走软件渲染；`audit` 只对 FAIL 退非 0。
 
 ## v4 — 2026-10-20

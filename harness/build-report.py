@@ -43,8 +43,42 @@ MIME = {
 }
 
 
-def inline_local_images(md_text, run):
+def image_payload(path, rects=()):
+    """Bytes to embed, with the given rectangles painted white.
+
+    Redaction rewrites pixels (not a white box drawn over the image): anything
+    cheaper stays recoverable from the PDF's embedded image object.
+    """
+    data = path.read_bytes()
+    if not rects:
+        return data
+    try:
+        from PIL import Image, ImageDraw
+    except ImportError:  # a silent skip would leak the very pixels asked to hide
+        sys.exit("redaction needs Pillow: pip install -r harness/requirements.txt")
+    import io
+
+    im = Image.open(io.BytesIO(data)).convert("RGB")
+    draw = ImageDraw.Draw(im)
+    for rect in rects:
+        x, y, w, h = (int(v) for v in rect)
+        draw.rectangle([x, y, x + w, y + h], fill="white")
+    buf = io.BytesIO()
+    im.save(buf, "PNG")
+    return buf.getvalue()
+
+
+def redactions_for(name, cli_rects, caps_redact):
+    """Rectangles that apply to one image: CLI rectangles plus per-file ones."""
+    rects = list(cli_rects)
+    rects += list(caps_redact.get(name, []) or [])
+    rects += list(caps_redact.get("*", []) or [])
+    return rects
+
+
+def inline_local_images(md_text, run, cli_rects=(), caps_redact=None):
     """Embed images referenced from report.md; Chrome prints from a temp dir."""
+    caps_redact = caps_redact or {}
 
     def repl(m):
         head, src, tail = m.group(1), m.group(2), m.group(3)
@@ -54,7 +88,8 @@ def inline_local_images(md_text, run):
         mime = MIME.get(path.suffix.lower().lstrip("."))
         if not mime or not path.is_file():
             return m.group(0)
-        b64 = base64.b64encode(path.read_bytes()).decode()
+        data = image_payload(path, redactions_for(path.name, cli_rects, caps_redact))
+        b64 = base64.b64encode(data).decode()
         return f"{head}data:{mime};base64,{b64}{tail}"
 
     return MD_IMAGE.sub(repl, md_text)
@@ -63,21 +98,25 @@ def inline_local_images(md_text, run):
 STANDALONE_IMG = re.compile(r"<p>\s*(<img\b[^>]*>)\s*</p>", re.IGNORECASE)
 
 
-def figure_standalone_images(html):
-    """A paragraph holding only an image becomes a captioned figure.
+def figure_standalone_images(html, start=0):
+    """A paragraph holding only an image becomes a numbered figure.
 
     Body screenshots used to render at natural size (then got clipped) and
     without a caption, unlike the appendix figures.
     """
+    counter = {"n": start}
 
     def repl(m):
         tag = m.group(1)
         alt = re.search(r'alt="([^"]*)"', tag)
+        counter["n"] += 1
         cap = html_escape(alt.group(1)) if alt and alt.group(1).strip() else ""
-        caption = f"<figcaption>{cap}</figcaption>" if cap else ""
-        return f"<figure>{tag}{caption}</figure>"
+        label = f"图 {counter['n']} · {cap}" if cap else f"图 {counter['n']}"
+        return f"<figure>{tag}<figcaption>{label}</figcaption></figure>"
 
-    return STANDALONE_IMG.sub(repl, html)
+    html = STANDALONE_IMG.sub(repl, html)
+    return html, counter["n"]
+
 
 
 
@@ -123,33 +162,46 @@ def main():
     ap.add_argument("--exclude", action="append", default=[], metavar="GLOB",
                     help="leave shots matching this glob out of the appendix "
                          "(repeatable), e.g. --exclude 't6-01*'")
-    ap.add_argument("--no-appendix", action="store_true",
-                    help="do not append the evidence-screenshot appendix at all")
+    ap.add_argument("--appendix", action="store_true",
+                    help="append every remaining shot as an appendix; off by default "
+                         "because evidence belongs next to the finding it supports")
     ap.add_argument("--max-figure-height", default="105mm",
-                    help="cap each appendix figure so two fit on a page (default 105mm)")
+                    help="cap each figure so two fit on a page (default 105mm)")
+    ap.add_argument("--redact", action="append", default=[], metavar="X,Y,W,H",
+                    help="paint this rectangle white in every embedded image, in source "
+                         "pixels (repeatable); per-image rectangles go in captions.json "
+                         "under a redact key")
     a = ap.parse_args()
 
-    run = pathlib.Path(a.run_dir).resolve()
-    md_text = (run / "report.md").read_text(encoding="utf-8")
-    md_text = inline_local_images(md_text, run)
-    body = markdown.markdown(md_text, extensions=["tables", "fenced_code", "sane_lists"])
-    body = figure_standalone_images(body)
+    cli_rects = []
+    for spec in a.redact:
+        parts = [p.strip() for p in spec.split(",")]
+        if len(parts) != 4 or not all(re.fullmatch(r"-?\d+", p) for p in parts):
+            ap.error(f"--redact wants X,Y,W,H in pixels, got: {spec}")
+        cli_rects.append(tuple(int(p) for p in parts))
 
-    caps, excludes = {}, list(a.exclude)
+    run = pathlib.Path(a.run_dir).resolve()
+    caps, caps_redact, excludes = {}, {}, list(a.exclude)
     cap_file = run / "shots" / "captions.json"
     if cap_file.exists():
         raw = json.loads(cap_file.read_text(encoding="utf-8-sig"))
         if isinstance(raw, dict):
-            # "exclude" (list of globs) is a directive, every other key is a caption
+            # "exclude" and "redact" are directives; string values are captions
             excludes += list(raw.pop("exclude", []) or [])
+            caps_redact = raw.pop("redact", {}) or {}
             caps = {k: v for k, v in raw.items() if isinstance(v, str)}
+
+    md_text = (run / "report.md").read_text(encoding="utf-8")
+    md_text = inline_local_images(md_text, run, cli_rects, caps_redact)
+    body = markdown.markdown(md_text, extensions=["tables", "fenced_code", "sane_lists"])
+    body, figure_no = figure_standalone_images(body)
 
     figs, seen, skipped = [], set(), []
     for p in sorted((run / "shots").glob("*.png")):
         if any(fnmatch.fnmatch(p.name, pat) for pat in excludes):
             skipped.append(p.name)
             continue
-        data = p.read_bytes()
+        data = image_payload(p, redactions_for(p.name, cli_rects, caps_redact))
         digest = hashlib.sha256(data).hexdigest()
         if digest in seen:
             skipped.append(f"{p.name} (duplicate)")
@@ -157,13 +209,20 @@ def main():
         seen.add(digest)
         b64 = base64.b64encode(data).decode()
         cap = caps.get(p.name) or p.stem.replace("-", " ")
+        figure_no += 1
         figs.append(
             f'<figure><img src="data:image/png;base64,{b64}">'
-            f'<figcaption>图 {len(figs) + 1} · {html_escape(cap)}</figcaption></figure>'
+            f'<figcaption>图 {figure_no} · {html_escape(cap)}</figcaption></figure>'
         )
 
     stamp = datetime.now().astimezone().strftime("%Y-%m-%d %H:%M %Z")
-    appendix = "" if a.no_appendix else f'<div class="shots"><h2>证据截图</h2>{"".join(figs)}</div>'
+    appendix = (
+        f'<div class="shots"><h2>附录：其余截图</h2>{"".join(figs)}</div>'
+        if a.appendix and figs else ""
+    )
+    redacted = len(cli_rects) + sum(len(v or []) for v in caps_redact.values())
+    if redacted:
+        print(f"redactions applied: {redacted} rectangle(s)", file=sys.stderr)
     footer = f'<div class="footer">由 harness/build-report.py 生成于 {stamp} · 运行目录 <code>{html_escape(run.name)}</code></div>'
 
     html = f"""<!doctype html>
@@ -189,6 +248,9 @@ def main():
   th, td {{ border: 1px solid #d0d0d0; padding: 1.6mm 2mm; text-align: left; vertical-align: top;
             overflow-wrap: anywhere; }}
   th {{ background: #f6f6f6; white-space: nowrap; }}
+  /* short id/severity columns must not break "T1" into "T" + "1" */
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) {{ white-space: nowrap; }}
+  td code {{ font-size: 8.6pt; }}
   blockquote {{ margin: 3mm 0; padding: 2mm 3mm; border-left: 3px solid #999; color: #444; background: #fafafa; }}
   figure {{ margin: 3mm 0; page-break-inside: avoid; text-align: center; }}
   figure img {{ max-width: 100%; max-height: {a.max_figure_height}; width: auto;

@@ -694,9 +694,16 @@ def cmd_launch(a):
 
 def cmd_report(a):
     script = ROOT / "harness" / "build-report.py"
-    subprocess.run(
-        [sys.executable, str(script), a.run_dir, "--out", a.out], check=True
-    )
+    cmd = [sys.executable, str(script), a.run_dir, "--out", a.out]
+    for spec in getattr(a, "redact", []) or []:
+        cmd += ["--redact", spec]
+    for spec in getattr(a, "exclude", []) or []:
+        cmd += ["--exclude", spec]
+    if getattr(a, "appendix", False):
+        cmd.append("--appendix")
+    if getattr(a, "max_figure_height", None):
+        cmd += ["--max-figure-height", a.max_figure_height]
+    subprocess.run(cmd, check=True)
     return {"target": str(Path(a.run_dir).expanduser().resolve())}
 
 
@@ -858,6 +865,13 @@ def main():
     p = sub.add_parser("report", help="render report.md to PDF")
     p.add_argument("run_dir")
     p.add_argument("--out", default="report.pdf")
+    p.add_argument("--redact", action="append", default=[], metavar="X,Y,W,H",
+                   help="paint this rectangle white in every embedded image (repeatable)")
+    p.add_argument("--exclude", action="append", default=[], metavar="GLOB",
+                   help="leave shots matching this glob out of the appendix (repeatable)")
+    p.add_argument("--appendix", action="store_true",
+                   help="also append the remaining shots as an appendix")
+    p.add_argument("--max-figure-height", default=None, help="cap figure height, e.g. 105mm")
     p.set_defaults(func=cmd_report)
 
     p = sub.add_parser("audit", help="cross-check events, report and evidence")

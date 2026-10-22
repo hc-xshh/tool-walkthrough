@@ -71,9 +71,11 @@ python3 harness/cdp.py clickel "允许读取" --nth 0   # 选项带序号时按�
 python3 harness/cdp.py shot runs/<run>/shots/02.png
 
 # 5. 出 PDF（中间 HTML 只写临时目录）
-#    shots/ 下的图默认全进附录：用 --exclude 排除收款码/账号类截图，
-#    用 shots/captions.json 写图注（{"02.png": "首页", "exclude": ["t6-*"]}）
-python3 harness/wt.py report runs/<date>-<tool> --exclude 't6-*'
+#    截图写在发现下面（正文就地引用），默认不再堆附录；--appendix 才追加未引用的图
+#    账号名/收款码用 --redact 涂白（改像素，不是盖白块），也可写进 captions.json 的 redact
+python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
+#    shots/captions.json 同时支持图注与指令：
+#    {"02-home.png": "首页", "exclude": ["t6-*"], "redact": {"*": [[10,865,300,75]]}}
 
 # Linux 隔离桌面（可选；macOS / Windows 用独立用户或虚拟机）
 ./harness/desktop-up.sh :98 1440x900x24
@@ -111,7 +113,7 @@ python3 harness/wt.py report runs/<date>-<tool> --exclude 't6-*'
 python3 harness/wt.py audit runs/<run>
 ```
 
-逐项检查：`report.md` 是否存在、报告里引用的截图是否都在、`shot` 事件的文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图、`harness.json` 是否存在。`audit` 只对 FAIL 返回非 0，证据为空或只有 WARN 时仍可能退 0；CI 请用 `audit --strict`（WARN 也视为失败）。
+逐项检查：`report.md` 是否存在、报告里引用的截图是否都在、事件里的截图文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图（`wt.py click` 默认点在截图，`cdp.py --capture` 同理）、`harness.json` 是否存在。`audit` 只对 FAIL 返回非 0，证据为空或只有 WARN 时仍可能退 0；CI 请用 `audit --strict`（WARN 也视为失败）。
 
 **Profiles**：
 
