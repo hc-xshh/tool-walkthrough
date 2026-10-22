@@ -123,12 +123,14 @@ def split_nav(text):
     if marker not in text:
         return text, []
     head, _, tail = text.partition(marker)
-    rows, rest_lines = [], []
+    rows, rest_lines, in_nav = [], [], True
     for line in tail.splitlines():
         s = line.strip()
-        if s.startswith("|") and not re.fullmatch(r"\|[\s\-:|]+\|", s) and "从" not in s:
+        if s.startswith("## "):  # e.g. 状态矩阵 after the nav table
+            in_nav = False
+        if in_nav and s.startswith("|") and not re.fullmatch(r"\|[\s\-:|]+\|", s) and "从" not in s:
             rows.append(s)
-        elif rest_lines or (s and not s.startswith("|")):
+        elif not in_nav:
             rest_lines.append(line)
     leftover = "\n".join(rest_lines).strip()
     body = head.rstrip()

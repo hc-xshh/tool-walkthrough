@@ -850,6 +850,64 @@ def crawl_issues(run, cov):
     return issues
 
 
+def read_state_matrix(run):
+    """Rows of the '## 状态矩阵' table: {'screen','state','how','reached','note'}."""
+    path = run / "ui-map.md"
+    if not path.exists():
+        return None
+    text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
+    in_block, header, rows = False, None, []
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("## "):
+            in_block = line[3:].strip().startswith("状态")
+            header = None
+            continue
+        if not in_block or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if header is None:
+            header = {c: i for i, c in enumerate(cells)}
+            continue
+        if all(set(c) <= set("-: ") for c in cells):
+            continue
+
+        def cell(key):
+            i = header.get(key)
+            return cells[i] if i is not None and i < len(cells) else ""
+
+        if not cell("屏幕"):
+            continue
+        rows.append({
+            "screen": cell("屏幕"), "state": cell("状态"),
+            "how": cell("怎么触发"), "reached": cell("本轮到没到"),
+            "note": cell("覆盖任务或原因"),
+        })
+    return rows
+
+
+def state_issues(run, cov):
+    rows = read_state_matrix(run)
+    if rows is None:
+        return ["no state matrix — a crawl only covers screens at rest, states need their own ledger"]
+    issues = []
+    if not rows:
+        issues.append("state matrix has no rows")
+    by_screen = {}
+    for r in rows:
+        sid = re.match(r"\s*(S\d+)", r["screen"])
+        if sid:
+            by_screen.setdefault(sid.group(1), []).append(r)
+    for name in cov["screens"]:
+        sid = re.match(r"\s*(S\d+)", name)
+        if sid and sid.group(1) not in by_screen:
+            issues.append(f"{sid.group(1)} has no state rows")
+    for r in rows:
+        if "没到" in r["reached"] and not r["note"].strip():
+            issues.append(f"state '{r['state']}' on {r['screen']} is marked 没到 without a reason")
+    return issues
+
+
 def ui_coverage(run):
     """(total, covered, skipped-with-reason, uncovered, dangling task refs)."""
     controls = read_ui_map(run)
@@ -897,7 +955,7 @@ def cmd_coverage(a):
     for c in cov["uncovered"]:
         print(f"  - {c['id']} has no task and no reason")
 
-    issues = crawl_issues(run, cov)
+    issues = crawl_issues(run, cov) + state_issues(run, cov)
     if issues:
         print("\ncrawl looks incomplete:")
         for i in issues:
@@ -934,6 +992,27 @@ def count_planned_tasks(plan_path):
             if re.match(r"(Pass|Fail|Not tested)", cells[res_idx], re.I):
                 filled += 1
     return total, filled
+
+
+def finding_issue_list(text):
+    """Findings must state 归因 (product/script/env) and 复现 count.
+
+    Reports title findings either as `### 4.1 · S2 · ...` or `#### W-01 ...`,
+    so count finding-like headings and compare with the two fields.
+    """
+    titles = re.findall(r"^#{3,4}\s+(.+)$", text, flags=re.M)
+    findings = [t for t in titles if re.search(r"·\s*S[1-4]\b|^\s*W-\d+", t)]
+    n = len(findings)
+    if not n:
+        return []
+    missing = []
+    got_attr = len(re.findall(r"\*\*归因\*\*", text))
+    got_repro = len(re.findall(r"\*\*复现\*\*", text))
+    if got_attr < n:
+        missing.append(f"{n - got_attr} of {n} findings lack 归因")
+    if got_repro < n:
+        missing.append(f"{n - got_repro} of {n} findings lack 复现")
+    return missing
 
 
 def cmd_audit(a):
@@ -1047,13 +1126,23 @@ def cmd_audit(a):
             f"{len(cov['uncovered'])} without a task or reason",
         ))
     else:
-        issues = crawl_issues(run, cov)
+        issues = crawl_issues(run, cov) + state_issues(run, cov)
         checks.append((
             "ui coverage",
             "PASS" if not issues else "WARN",
             f"{cov['screen_count']} screens, {cov['total']} controls, "
             f"{cov['covered']} covered, {cov['skipped']} skipped with reason"
             + (f"; crawl: {issues[0]}" if issues else ""),
+        ))
+
+    if report_ok:
+        missing_fields = finding_issue_list(text)
+        checks.append((
+            "finding attribution",
+            "PASS" if not missing_fields else "WARN",
+            "every finding states 归因/复现"
+            if not missing_fields
+            else f"{len(missing_fields)} missing: {missing_fields[0]}",
         ))
 
     print(f"audit {run}")
