@@ -11,16 +11,21 @@
 | `../../harness/ocr.sh` | Linux OCR word boxes (fallback) |
 | `../../harness/build-report.py` | markdown → PDF (intermediate HTML stays in tmp) |
 
-Typical sequence (all platforms):
+Typical sequence (all platforms; `<profile>` is `linux-desktop` / `linux-x11` / `macos` / `windows` / `ci`, and `--profile` goes before the subcommand so `harness.json` records it):
 
 ```bash
 python3 harness/wt.py profiles
-python3 harness/wt.py --profile linux-x11 preflight
-python3 harness/wt.py new-run 2026-10-19-<tool>
+python3 harness/wt.py --profile <profile> preflight
+python3 harness/wt.py --profile <profile> new-run 2026-10-19-<tool>
+
+# cdp.py only reads WALKTHROUGH_RUN; wt.py also uses it when --run is omitted
+export WALKTHROUGH_RUN=runs/2026-10-19-<tool>
+# Windows PowerShell: $env:WALKTHROUGH_RUN = "runs\2026-10-19-<tool>"
+
 python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
 python3 harness/cdp.py --port 9339 text
 python3 harness/wt.py report runs/<run>
-python3 harness/wt.py audit runs/<run>
+python3 harness/wt.py audit --strict runs/<run>
 ```
 
 Linux isolated desktop (optional):

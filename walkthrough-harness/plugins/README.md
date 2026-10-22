@@ -1,10 +1,10 @@
 # Plugins
 
-None for now.
+Reserved (预留). No plugin is required, and none participates in the current flow.
 
-The walkthrough runs as an agent session with normal tools. If we later add a plugin, it should only do one of:
+The walkthrough runs as an agent session with normal tools. A plugin is only worth adding if it removes a repeated manual step; it may only do one of:
 
-- auto-generate `meta.json` and the evidence manifest
+- auto-generate `harness.json` and the evidence manifest
 - auto-build the PDF after `report.md` changes
 - post the report to a chat channel (never the source of truth)
 

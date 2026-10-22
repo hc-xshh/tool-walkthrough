@@ -6,14 +6,14 @@
 
 | Harness² 组件 | 这里放什么 |
 |---|---|
-| system prompt | `systemprompt.md`：角色、决策契约、输出契约 |
-| guardrails | `guardrails.md`：不碰凭据、不碰真实桌面、不把环境问题写成产品问题 |
+| system prompt | `systemprompt.md`：执行顺序、决策契约、五件交付物、完成判据 |
+| guardrails | `guardrails.md`：凭据只由用户输入、环境三档、PII 与证据入库规则 |
 | memory | `LongTermMEMORY.md`：跨轮经验（cue / lesson / evidence / confidence） |
-| tool guidance | `tool_descriptions/tool_guidance.md`：CDP 优先、截图成对、弹窗与选项处理 |
-| skills | `skills/README.md`：调研、任务计划、发现写法、报告四类 |
-| subagents | `sub_agents/README.md`：盲评员、证据审计员 |
+| tool guidance | `tool_descriptions/tool_guidance.md`：工具怎么调（cdp.py 读取 / 点击 / 输入、平台接线） |
+| skills | `skills/README.md`：四类；`skills/finding-writing/SKILL.md` 可直接照做 |
+| subagents | `sub_agents/README.md`：盲评（可选）、证据审计（发现定稿前必做） |
 | scripts | `scripts/README.md`：preflight、desktop、cdp、build-report |
-| plugins | `plugins/README.md`：暂不需要 |
+| plugins | `plugins/README.md`：预留（reserved），当前不参与流程 |
 
 ## 两层循环怎么跑
 

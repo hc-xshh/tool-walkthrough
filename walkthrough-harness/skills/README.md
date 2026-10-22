@@ -1,6 +1,6 @@
 # Skills
 
-Four skills carry the walkthrough. They live in `METHOD.md` and `templates/`; this file is the index.
+Four walkthrough skills. Three live in `METHOD.md` and `templates/`; `finding-writing` also ships as an executable skill file (`finding-writing/SKILL.md`). This file is the index.
 
 ## 1. Tool research (Step 0)
 
@@ -16,12 +16,13 @@ Four skills carry the walkthrough. They live in `METHOD.md` and `templates/`; th
 
 ## 3. Finding writing
 
+- Executable version: `finding-writing/SKILL.md` — write the finding first, then score it.
 - element + consequence + evidence + 0–4 + recommendation.
 - No "user couldn't find it"; describe the path taken.
 - Mark inference vs fact; S3/S4 need human review.
 
 ## 4. Report
 
-- Six sections: summary → task matrix → findings → what worked → method & limits → appendix.
+- Seven sections: summary → task matrix → live-task execution → findings → what worked → method & limits → appendix.
 - Use `templates/report.md`; build PDF with `harness/build-report.py`.
 - The product's own output is evidence, not the report.
