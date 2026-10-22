@@ -2,6 +2,14 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v5 — 2026-10-22
+
+- **新增 Step 1 页面地图**（流程从 6 步变 7 步）：调研之后先把每个界面的可交互控件列全（`ui-map.md`），再设计任务。每个控件要么挂到某条任务，要么写清不测原因；`wt.py coverage` 与 `audit` 的 `ui coverage` 检查覆盖率。
+- 任务数从 5–8 提到 **8–15**，并要求任务标注覆盖的控件 ID；新增「连续任务」为常规项（状态类 bug 只在第二次出现）。
+- 新增 `harness/ui-map.py`：经 CDP 自动枚举按钮/页签/菜单/输入框/图标按钮（含无 role 的 cursor:pointer 元素），按顶部栏/左侧栏/主区/弹窗分区输出 Markdown 表，人工补命名与归属。
+- `wt.py coverage [--strict]`：解析 `ui-map.md`，列出没有任务也没有原因的控件，并交叉检查任务 ID 是否存在。
+- `new-run` 多复制一份 `templates/ui-map.md`；`templates/task-plan.md` 增加「覆盖控件」列与「未覆盖控件」表。
+
 ## Unreleased
 
 - `audit` 修复「假绿」：`shot` 事件没有截图路径、或截图文件已丢失时不再判 PASS；一次截图都没有时直接 FAIL；`click` 后补截图的检查覆盖 `cdp:click*`；新增 `--strict`，WARN 也视为失败，供 CI 使用（默认仍只对 FAIL 退非 0）。

@@ -440,6 +440,7 @@ def cmd_new_run(a):
     tpl_dir = ROOT / "templates"
     scaffold = {
         "tool-profile.md": run / "tool-profile.md",
+        "ui-map.md": run / "ui-map.md",
         "task-plan.md": run / "task-plan.md",
         "report.md": run / "report.md",
         "task-trace.md": run / "trace" / "task-trace.md",
@@ -707,6 +708,81 @@ def cmd_report(a):
     return {"target": str(Path(a.run_dir).expanduser().resolve())}
 
 
+def read_ui_map(run):
+    """Parse ui-map.md: rows with a U-id, their covered task ids and notes."""
+    path = run / "ui-map.md"
+    if not path.exists():
+        return None
+    controls = []
+    header = None
+    text = path.read_text(encoding="utf-8", errors="replace")
+    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)  # ignore template examples
+    for raw in text.splitlines():
+        line = raw.strip()
+        if not line.startswith("|"):
+            header = None if not line else header
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if header is None:
+            if any(c.upper() == "ID" for c in cells):
+                header = {c: i for i, c in enumerate(cells)}
+            continue
+        if all(set(c) <= set("-: ") for c in cells):
+            continue  # separator row
+        uid = cells[header.get("ID", 0)] if cells else ""
+        if not re.fullmatch(r"U\d+", uid):
+            continue
+        cover_idx = header.get("覆盖任务")
+        note_idx = header.get("备注")
+        covers = cells[cover_idx] if cover_idx is not None and cover_idx < len(cells) else ""
+        note = cells[note_idx] if note_idx is not None and note_idx < len(cells) else ""
+        task_ids = re.findall(r"T\d+", covers)
+        controls.append({"id": uid, "covers": task_ids, "note": note.strip()})
+    return controls
+
+
+def ui_coverage(run):
+    """(total, covered, skipped-with-reason, uncovered, dangling task refs)."""
+    controls = read_ui_map(run)
+    if controls is None:
+        return None
+    plan = run / "task-plan.md"
+    known = set(re.findall(r"T\d+", plan.read_text(encoding="utf-8", errors="replace"))) if plan.exists() else set()
+    covered = [c for c in controls if c["covers"]]
+    skipped = [c for c in controls if not c["covers"] and c["note"]]
+    uncovered = [c for c in controls if not c["covers"] and not c["note"]]
+    dangling = sorted({t for c in controls for t in c["covers"] if known and t not in known})
+    return {
+        "controls": controls,
+        "total": len(controls),
+        "covered": len(covered),
+        "skipped": len(skipped),
+        "uncovered": uncovered,
+        "dangling": dangling,
+        "tasks_known": len(known),
+    }
+
+
+def cmd_coverage(a):
+    run = Path(a.run_dir).expanduser().resolve()
+    cov = ui_coverage(run)
+    if cov is None:
+        print(f"no {run / 'ui-map.md'} — build the page map first (METHOD Step 1)")
+        return 1 if getattr(a, "strict", False) else 0
+    print(f"coverage {run}")
+    print(f"  controls   {cov['total']}")
+    print(f"  covered    {cov['covered']}")
+    print(f"  skipped    {cov['skipped']}  (has a reason in 备注)")
+    print(f"  uncovered  {len(cov['uncovered'])}")
+    if cov["dangling"]:
+        print(f"  unknown task ids: {', '.join(cov['dangling'])}")
+    for c in cov["uncovered"]:
+        print(f"  - {c['id']} has no task and no reason")
+    if getattr(a, "strict", False) and (cov["uncovered"] or cov["dangling"]):
+        return 1
+    return 0
+
+
 def cmd_audit(a):
     run = Path(a.run_dir).expanduser().resolve()
     events = read_events(run)
@@ -794,6 +870,24 @@ def cmd_audit(a):
     harness = run / "harness.json"
     checks.append(("harness.json", "PASS" if harness.exists() else "WARN", str(harness)))
 
+    cov = ui_coverage(run)
+    if cov is None:
+        checks.append(("ui coverage", "WARN", f"no {run.name}/ui-map.md (METHOD Step 1)"))
+    elif not cov["total"]:
+        checks.append(("ui coverage", "WARN", "ui-map.md has no control rows yet"))
+    elif cov["uncovered"]:
+        checks.append((
+            "ui coverage",
+            "WARN",
+            f"{cov['total']} controls, {len(cov['uncovered'])} without a task or reason",
+        ))
+    else:
+        checks.append((
+            "ui coverage",
+            "PASS",
+            f"{cov['total']} controls, {cov['covered']} covered, {cov['skipped']} skipped with reason",
+        ))
+
     print(f"audit {run}")
     print(f"{'check':<24} {'status':<6} detail")
     fails = warns = 0
@@ -878,6 +972,11 @@ def main():
     p.add_argument("run_dir")
     p.add_argument("--strict", action="store_true", help="treat WARN as failure (use in CI)")
     p.set_defaults(func=cmd_audit)
+
+    p = sub.add_parser("coverage", help="show controls in ui-map.md that no task covers")
+    p.add_argument("run_dir")
+    p.add_argument("--strict", action="store_true", help="exit non-zero when anything is uncovered")
+    p.set_defaults(func=cmd_coverage)
 
     a = ap.parse_args()
     if a.cmd == "launch" and not a.command and not a.app:

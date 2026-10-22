@@ -11,12 +11,13 @@
 
 | 路径 | 内容 |
 |---|---|
-| `METHOD.md` | 方法本体：6 步流程、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
+| `METHOD.md` | 方法本体：7 步流程（含页面地图）、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
 | `templates/tool-profile.md` | 走查前的工具调研模板（事实卡 + 官方声明表） |
-| `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 结果 / 证据） |
+| `templates/ui-map.md` | 页面地图模板（控件清单 + 归属任务 / 不测原因） |
+| `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 覆盖控件 / 结果 / 证据） |
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
-| `templates/report.md` | 七节报告模板 |
-| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检）+ Linux 隔离桌面脚本 + CDP 驱动 |
+| `templates/report.md` | 七节报告模板（图随发现） |
+| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
 ## 不包含什么
@@ -39,38 +40,43 @@ Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.
 ```bash
 # 准备：建本轮目录（三平台）
 #   同时生成 trace/ shots/ logs/ artifacts/，并从 templates/ 复制
-#   tool-profile.md、task-plan.md、task-trace.md、report.md 骨架
+#   tool-profile.md、ui-map.md、task-plan.md、task-trace.md、report.md 骨架
 python3 harness/wt.py new-run 2026-10-19-<tool>
 
 # 0. 先做工具调研（20–30 分钟，只读文档，不预演界面）
 #    产出 runs/<date>-<tool>/tool-profile.md（new-run 已复制模板）
 #    来源优先级与 8 项清单见 METHOD.md 的 Step 0
 
-# 1. 预检（三平台）
+# 1. 页面地图（30–40 分钟）：先把界面上的控件列全，再决定测什么
+#    Electron / Web 应用可直接枚举，再人工命名 + 填覆盖任务
+python3 harness/ui-map.py --port 9339 --out runs/<run>/ui-map.md --title "主窗口（首屏）"
+python3 harness/wt.py coverage runs/<run>     # 列出还没归属的控件
+
+# 2. 预检（三平台）
 python3 harness/wt.py preflight
 
-# 2. 启动应用（带 --run 才会写事件日志）
+# 3. 启动应用（带 --run 才会写事件日志）
 #    Linux：默认全新 HOME；需要登录态时设 WALKTHROUGH_HOME / WALKTHROUGH_DBUS
 python3 harness/wt.py --run runs/<run> launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
 #    macOS：--app 走 `open -a`；Windows：直接传 exe 路径
 python3 harness/wt.py --run runs/<run> launch --app "<AppName>" --log runs/<run>/logs/app.log
 #    macOS 要给应用传参数时，再加 `-- <参数...>`（例如 -- --new-window）
 
-# 3. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
+# 4. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
 python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
 python3 harness/wt.py --run runs/<run> ocr runs/<run>/shots/01.png
 #    OCR 给的是截图内的像素坐标；多屏负原点或 Retina 缩放下用 --shot 换算
 #    默认点完自动补一张截图（--no-capture 关掉），audit 会据此配对 click → shot
 python3 harness/wt.py --run runs/<run> click 300 241 --shot runs/<run>/shots/01.png
 
-# 4. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
+# 5. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
 #    启动时加 --remote-debugging-port=9339
 python3 harness/cdp.py text
 python3 harness/cdp.py clicktext "登录" --capture runs/<run>/shots/02-after-click.png
 python3 harness/cdp.py clickel "允许读取" --nth 0   # 选项带序号时按第 n 个匹配点
 python3 harness/cdp.py shot runs/<run>/shots/02.png
 
-# 5. 出 PDF（中间 HTML 只写临时目录）
+# 6. 出 PDF（中间 HTML 只写临时目录）
 #    截图写在发现下面（正文就地引用），默认不再堆附录；--appendix 才追加未引用的图
 #    账号名/收款码用 --redact 涂白（改像素，不是盖白块），也可写进 captions.json 的 redact
 python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
