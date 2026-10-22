@@ -461,6 +461,17 @@ def cmd_new_run(a):
     return {"target": str(run), "detail": f"{len(copied)} templates + trace log"}
 
 
+class _ShotArgs:
+    """Minimal namespace so click can reuse cmd_shot's capture path."""
+
+    display = None
+    geometry = None
+    profile = None
+
+    def __init__(self, out):
+        self.out = str(out)
+
+
 def cmd_shot(a):
     prof = profile(a)
     out = Path(a.out).expanduser().resolve()
@@ -584,6 +595,20 @@ def cmd_click(a):
     rec = {"target": f"{x:.0f},{y:.0f}", "detail": f"button={a.button}{note}"}
     if getattr(a, "shot", None):
         rec["screenshot"] = str(Path(a.shot).expanduser().resolve())
+
+    # A click without a screenshot is unverifiable later, and `audit` flags it.
+    # Capture by default whenever there is a run to put the file in.
+    if not getattr(a, "no_capture", False):
+        run = resolve_run(a)
+        if run:
+            target = getattr(a, "capture", None)
+            shot_out = (
+                Path(target).expanduser().resolve()
+                if target
+                else run / "shots" / f"click-{datetime.now().strftime('%H%M%S')}-{int(x)}x{int(y)}.png"
+            )
+            cmd_shot(_ShotArgs(shot_out))
+            rec["screenshot"] = str(shot_out)
     return rec
 
 
@@ -696,20 +721,23 @@ def cmd_audit(a):
     SHOT_ACTIONS = {"shot", "cdp:shot"}
     CLICK_ACTIONS = {"click", "cdp:click", "cdp:clicktext", "cdp:clickel", "cdp:clickxy"}
 
-    shots = [e for e in events if e.get("action") in SHOT_ACTIONS and e.get("result") != "error"]
-    bad_shots, unattributed = [], 0
-    for e in shots:
-        raw = str(e.get("screenshot") or "").strip()
-        if not raw:
-            unattributed += 1  # a shot that recorded no path proves nothing
-            continue
-        p = Path(raw)
+    shot_events = [e for e in events if e.get("action") in SHOT_ACTIONS and e.get("result") != "error"]
+    # clicks and other actions can carry a screenshot too (`click` captures by
+    # default); those are evidence as well and must point at real files
+    carried = [
+        e for e in events
+        if str(e.get("screenshot") or "").strip() and e.get("result") != "error"
+    ]
+    bad_shots = []
+    for e in carried:
+        p = Path(str(e["screenshot"]))
         if not p.is_absolute():
             candidates = [run / p, run.parent / p, Path.cwd() / p]
             p = next((c for c in candidates if c.exists()), p)
         if not p.exists():
             bad_shots.append(str(p))
-    if not shots:
+    unattributed = sum(1 for e in shot_events if not str(e.get("screenshot") or "").strip())
+    if not shot_events and not carried:
         shot_status = "FAIL"
     elif bad_shots:
         shot_status = "FAIL"
@@ -720,7 +748,8 @@ def cmd_audit(a):
     checks.append((
         "shot files",
         shot_status,
-        f"{len(shots)} shots, {len(bad_shots)} missing, {unattributed} without a path",
+        f"{len(shot_events)} shots, {len(carried)} screenshots, "
+        f"{len(bad_shots)} missing, {unattributed} without a path",
     ))
 
     errors = [e for e in events if e.get("result") == "error"]
@@ -730,11 +759,25 @@ def cmd_audit(a):
         f"{len(errors)} (last: {errors[-1].get('action') if errors else '-'})",
     ))
 
+    def evidence_ok(ev):
+        raw = str(ev.get("screenshot") or "").strip()
+        if not raw:
+            return False
+        p = Path(raw)
+        if not p.is_absolute():
+            p = next((c for c in (run / p, run.parent / p, Path.cwd() / p) if c.exists()), p)
+        return p.exists()
+
     gaps = 0
     for i, e in enumerate(events):
         if e.get("action") in CLICK_ACTIONS:
-            if not any(x.get("action") in SHOT_ACTIONS for x in events[i + 1:i + 6]):
-                gaps += 1
+            # `wt.py click` / `cdp.py --capture` now shoot at click time, so a
+            # click carrying a real screenshot is already paired.
+            if evidence_ok(e):
+                continue
+            if any(x.get("action") in SHOT_ACTIONS or evidence_ok(x) for x in events[i + 1:i + 6]):
+                continue
+            gaps += 1
     checks.append((
         "click -> shot",
         "PASS" if gaps == 0 else "WARN",
@@ -793,6 +836,9 @@ def main():
     p.add_argument("--shot", default=None,
                    help="translate coordinates from this shot's pixel space (uses its .json sidecar)")
     p.add_argument("--dry-run", action="store_true", help="print the translated target without clicking")
+    p.add_argument("--capture", default=None, help="screenshot path to write right after clicking")
+    p.add_argument("--no-capture", action="store_true",
+                   help="do not screenshot after the click (audit will flag the click as unpaired)")
     p.set_defaults(func=cmd_click)
 
     p = sub.add_parser("ocr", help="OCR an image and print words with boxes")

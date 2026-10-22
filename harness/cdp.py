@@ -135,6 +135,8 @@ def main():
                     help="target type to attach to; IDE webview panels live in 'iframe'")
     ap.add_argument("--nested", action="store_true",
                     help="evaluate inside the first inner iframe (VS Code webview payload)")
+    ap.add_argument("--capture", default=None,
+                    help="renderer screenshot to write after the operation (paired with clicks)")
     a = ap.parse_args()
 
     # `eval @path/to/expr.js`: Windows shells strip the quotes out of an inline
@@ -243,6 +245,16 @@ def main():
                     print(t.get("type"), "|", (t.get("title") or "")[:40], "|", (t.get("url") or "")[:100])
         else:
             print(__doc__)
+        # A click with no screenshot cannot be verified later; `wt.py audit`
+        # pairs click events with shot events, and a click event that carries
+        # its own screenshot counts as paired.
+        if a.capture and not shot_path:
+            r = c.cmd("Page.captureScreenshot", {"format": "png"})
+            out = Path(a.capture).expanduser().resolve()
+            out.parent.mkdir(parents=True, exist_ok=True)
+            out.write_bytes(base64.b64decode(r["result"]["data"]))
+            shot_path = str(out)
+            print(f"captured {out}")
     except Exception as e:
         status, detail = "error", f"{type(e).__name__}: {e}"
         raise

@@ -60,17 +60,20 @@ python3 harness/wt.py --run runs/<run> launch --app "<AppName>" --log runs/<run>
 python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
 python3 harness/wt.py --run runs/<run> ocr runs/<run>/shots/01.png
 #    OCR 给的是截图内的像素坐标；多屏负原点或 Retina 缩放下用 --shot 换算
+#    默认点完自动补一张截图（--no-capture 关掉），audit 会据此配对 click → shot
 python3 harness/wt.py --run runs/<run> click 300 241 --shot runs/<run>/shots/01.png
 
 # 4. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
 #    启动时加 --remote-debugging-port=9339
 python3 harness/cdp.py text
-python3 harness/cdp.py clicktext "登录"
+python3 harness/cdp.py clicktext "登录" --capture runs/<run>/shots/02-after-click.png
 python3 harness/cdp.py clickel "允许读取" --nth 0   # 选项带序号时按第 n 个匹配点
 python3 harness/cdp.py shot runs/<run>/shots/02.png
 
 # 5. 出 PDF（中间 HTML 只写临时目录）
-python3 harness/wt.py report runs/<date>-<tool>
+#    shots/ 下的图默认全进附录：用 --exclude 排除收款码/账号类截图，
+#    用 shots/captions.json 写图注（{"02.png": "首页", "exclude": ["t6-*"]}）
+python3 harness/wt.py report runs/<date>-<tool> --exclude 't6-*'
 
 # Linux 隔离桌面（可选；macOS / Windows 用独立用户或虚拟机）
 ./harness/desktop-up.sh :98 1440x900x24
