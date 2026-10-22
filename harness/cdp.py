@@ -46,6 +46,13 @@ except ImportError as exc:  # actionable error when another project venv is acti
     )
 
 
+VK = {
+    "Enter": 13, "Escape": 27, "Tab": 9, "Backspace": 8, "Delete": 46,
+    "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
+    "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34, "Space": 32,
+}
+
+
 def _log(op, target, status, started, screenshot=None, detail=""):
     run = os.environ.get("WALKTHROUGH_RUN")
     if not run:
@@ -130,6 +137,13 @@ def main():
                     help="evaluate inside the first inner iframe (VS Code webview payload)")
     a = ap.parse_args()
 
+    # `eval @path/to/expr.js`: Windows shells strip the quotes out of an inline
+    # expression, so anything with spaces or string literals should come from a
+    # file instead of the command line.
+    if a.arg and a.arg.startswith("@") and a.op in ("eval", "click", "clicktext", "clickel", "type"):
+        expr_file = Path(a.arg[1:]).expanduser()
+        a.arg = expr_file.read_text(encoding="utf-8").strip()
+
     started = time.monotonic()
     status, detail, shot_path = "ok", "", None
 
@@ -164,7 +178,7 @@ def main():
             detail = f"{len(a.arg or '')} chars"
         elif a.op == "key":
             key = a.arg or "Enter"
-            code = {"Enter": 13, "Escape": 27, "Tab": 9}.get(key, 13)
+            code = VK.get(key, 13)
             for t in ("keyDown", "keyUp"):
                 c.cmd("Input.dispatchKeyEvent", {"type": t, "key": key, "code": key,
                                                  "windowsVirtualKeyCode": code,
@@ -175,7 +189,8 @@ def main():
             key = parts[-1]
             mods = {"alt": 1, "ctrl": 2, "meta": 4, "shift": 8}
             modifiers = sum(mods.get(p, 0) for p in parts[:-1])
-            vk = ord(key.upper()) if len(key) == 1 else {"enter": 13, "escape": 27, "tab": 9}.get(key, 0)
+            named = {k.lower(): v for k, v in VK.items()}
+            vk = ord(key.upper()) if len(key) == 1 else named.get(key, 0)
             code = ("Key" + key.upper()) if len(key) == 1 else key.capitalize()
             for t in ("keyDown", "keyUp"):
                 c.cmd("Input.dispatchKeyEvent", {"type": t, "key": key, "code": code,
