@@ -435,7 +435,7 @@ def cmd_profiles(a):
 
 def cmd_new_run(a):
     run = (ROOT / "runs" / a.name).resolve()
-    for sub in ("shots", "logs", "trace", "artifacts"):
+    for sub in ("shots", "screens", "logs", "trace", "artifacts"):
         (run / sub).mkdir(parents=True, exist_ok=True)
     tpl_dir = ROOT / "templates"
     scaffold = {
@@ -453,11 +453,14 @@ def cmd_new_run(a):
             copied.append(str(dest.relative_to(run)))
     trace_log = run / "logs" / "task-trace.txt"
     trace_log.touch(exist_ok=True)
+    crawl_notes = run / "logs" / "crawl-notes.txt"
+    crawl_notes.touch(exist_ok=True)
     write_harness_json(run, profile(a))
     print(run)
     for rel in copied:
         print(f"scaffolded {rel}")
-    print(f"scaffolded logs/{trace_log.name}")
+    print(f"scaffolded logs/{trace_log.name}, logs/{crawl_notes.name}, screens/")
+    print("next: crawl the product (METHOD Step 1) and fill ui-map.md before designing tasks")
     print("runs/ is git-ignored. Do not 'git add -f' this directory.")
     return {"target": str(run), "detail": f"{len(copied)} templates + trace log"}
 
@@ -739,11 +742,68 @@ def read_ui_map(run):
             continue
         cover_idx = header.get("覆盖任务")
         note_idx = header.get("备注")
+        state_idx = header.get("状态")
         covers = cells[cover_idx] if cover_idx is not None and cover_idx < len(cells) else ""
         note = cells[note_idx] if note_idx is not None and note_idx < len(cells) else ""
+        state = cells[state_idx] if state_idx is not None and state_idx < len(cells) else ""
         task_ids = re.findall(r"T\d+", covers)
-        controls.append({"id": uid, "screen": screen, "covers": task_ids, "note": note.strip()})
+        controls.append({
+            "id": uid, "screen": screen, "covers": task_ids,
+            "note": note.strip(), "state": state,
+        })
     return controls
+
+
+def count_nav_edges(run):
+    """Rows in the '## 导航' table (从 / 控件 / 到)."""
+    path = run / "ui-map.md"
+    if not path.exists():
+        return 0
+    text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
+    in_nav = False
+    edges = 0
+    for raw in text.splitlines():
+        line = raw.strip()
+        if line.startswith("## "):
+            in_nav = line[3:].strip().startswith("导航")
+            continue
+        if not in_nav or not line.startswith("|"):
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if not cells or cells[0] in ("从", "") or all(set(c) <= set("-: ") for c in cells):
+            continue
+        edges += 1
+    return edges
+
+
+def crawl_issues(run, cov):
+    """Reasons to believe the product was not actually crawled through.
+
+    `coverage` alone only proves every *listed* control has a home; a lazy run
+    can list five controls from one screen and pass. These checks look at the
+    crawl itself: one first-visit screenshot per screen, one task per screen,
+    and a nav edge for every screen after the first.
+    """
+    issues = []
+    shots = sorted(p.name for p in (run / "screens").glob("*.png")) if (run / "screens").is_dir() else []
+
+    for name, items in cov["screens"].items():
+        sid = re.match(r"\s*(S\d+)", name)
+        sid = sid.group(1) if sid else None
+        if not sid:
+            issues.append(f"section {name!r} has no S-number (write '## S2 名称')")
+            continue
+        if not any(s.startswith(sid) for s in shots):
+            issues.append(f"{sid} has no first-visit screenshot (screens/{sid}-*.png)")
+        if not any(c["covers"] for c in items):
+            issues.append(f"{name}: no task covers this screen")
+
+    if cov["screen_count"] > 1:
+        edges = count_nav_edges(run)
+        need = cov["screen_count"] - 1
+        if edges < need:
+            issues.append(f"navigation table has {edges} edge(s), need at least {need} for {cov['screen_count']} screens")
+    return issues
 
 
 def ui_coverage(run):
@@ -792,9 +852,44 @@ def cmd_coverage(a):
         print(f"  unknown task ids: {', '.join(cov['dangling'])}")
     for c in cov["uncovered"]:
         print(f"  - {c['id']} has no task and no reason")
-    if getattr(a, "strict", False) and (cov["uncovered"] or cov["dangling"]):
+
+    issues = crawl_issues(run, cov)
+    if issues:
+        print("\ncrawl looks incomplete:")
+        for i in issues:
+            print(f"  ! {i}")
+    if getattr(a, "strict", False) and (cov["uncovered"] or cov["dangling"] or issues):
         return 1
     return 0
+
+
+def count_planned_tasks(plan_path):
+    """Task rows that carry a result — template examples have none."""
+    if not plan_path.exists():
+        return 0, 0
+    header = None
+    total, filled = 0, 0
+    for raw in plan_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        line = raw.strip()
+        if not line.startswith("|"):
+            header = None if not line else header
+            continue
+        cells = [c.strip() for c in line.strip("|").split("|")]
+        if header is None:
+            if any(c.upper() == "ID" for c in cells):
+                header = {c: i for i, c in enumerate(cells)}
+            continue
+        if all(set(c) <= set("-: ") for c in cells):
+            continue
+        idx = header.get("ID")
+        if idx is None or idx >= len(cells) or not re.fullmatch(r"T\d+", cells[idx]):
+            continue
+        total += 1
+        res_idx = header.get("结果")
+        if res_idx is not None and res_idx < len(cells):
+            if re.match(r"(Pass|Fail|Not tested)", cells[res_idx], re.I):
+                filled += 1
+    return total, filled
 
 
 def cmd_audit(a):
@@ -884,6 +979,15 @@ def cmd_audit(a):
     harness = run / "harness.json"
     checks.append(("harness.json", "PASS" if harness.exists() else "WARN", str(harness)))
 
+    plan = run / "task-plan.md"
+    if plan.exists():
+        total_tasks, filled = count_planned_tasks(plan)
+        checks.append((
+            "task count",
+            "PASS" if 8 <= filled <= 15 else "WARN",
+            f"{filled} tasks with a result, {total_tasks} rows (METHOD Step 3 wants 8-15)",
+        ))
+
     cov = ui_coverage(run)
     if cov is None:
         checks.append(("ui coverage", "WARN", f"no {run.name}/ui-map.md (METHOD Step 1)"))
@@ -897,11 +1001,13 @@ def cmd_audit(a):
             f"{len(cov['uncovered'])} without a task or reason",
         ))
     else:
+        issues = crawl_issues(run, cov)
         checks.append((
             "ui coverage",
-            "PASS",
+            "PASS" if not issues else "WARN",
             f"{cov['screen_count']} screens, {cov['total']} controls, "
-            f"{cov['covered']} covered, {cov['skipped']} skipped with reason",
+            f"{cov['covered']} covered, {cov['skipped']} skipped with reason"
+            + (f"; crawl: {issues[0]}" if issues else ""),
         ))
 
     print(f"audit {run}")
