@@ -2,7 +2,9 @@
 
 | Script | Purpose |
 |---|---|
-| `../../harness/wt.py` | Cross-platform entry: preflight / profiles / new-run / shot / click / ocr / launch / report / audit |
+| `../../harness/wt.py` | Cross-platform entry: preflight / profiles / new-run / shot / click / ocr / launch / report / audit / **coverage** |
+| `../../harness/ui-map.py` | Enumerate a screen's controls over CDP into `ui-map.md` (per-screen section + nav edge) |
+| `../../harness/shot-window.ps1` | Windows: capture one window instead of the whole desktop (logs a `shot-window` event) |
 | `../../harness/preflight.sh` | Linux: display, app version, sandbox mode, CDP port, disk, login state |
 | `../../harness/desktop-up.sh` | Linux: Xvfb + openbox + private DBus |
 | `../../harness/app-launch.sh` | Linux: launch a GUI app in the isolated desktop |

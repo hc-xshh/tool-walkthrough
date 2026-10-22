@@ -117,26 +117,36 @@ PROBE = r"""
 """
 
 
-def split_nav(text):
-    """Return (text without the 导航 block, list of nav row lines)."""
-    marker = "## 导航"
-    if marker not in text:
-        return text, []
-    head, _, tail = text.partition(marker)
-    rows, rest_lines, in_nav = [], [], True
-    for line in tail.splitlines():
+def split_tail(text):
+    """Split into (screen body, nav rows, state-matrix lines).
+
+    The nav table and the state matrix are re-emitted at the end of the file on
+    every append. Pulling both out (instead of only the nav) keeps the order
+    stable: screens -> state matrix -> nav, no matter how many screens are
+    added later.
+    """
+    body_lines, nav_rows, state_lines = [], [], []
+    mode = "body"
+    for line in text.splitlines():
         s = line.strip()
-        if s.startswith("## "):  # e.g. 状态矩阵 after the nav table
-            in_nav = False
-        if in_nav and s.startswith("|") and not re.fullmatch(r"\|[\s\-:|]+\|", s) and "从" not in s:
-            rows.append(s)
-        elif not in_nav:
-            rest_lines.append(line)
-    leftover = "\n".join(rest_lines).strip()
-    body = head.rstrip()
-    if leftover:
-        body += "\n\n" + leftover
-    return body + "\n", rows
+        if s.startswith("## 导航"):
+            mode = "nav"
+            continue
+        if s.startswith("## 状态矩阵"):
+            mode = "state"
+            state_lines.append("## 状态矩阵")
+            continue
+        if s.startswith("## "):
+            mode = "body"
+        if mode == "body":
+            body_lines.append(line)
+        elif mode == "nav":
+            if s.startswith("|") and not re.fullmatch(r"\|[\s\-:|]+\|", s) and "从" not in s:
+                nav_rows.append(s)
+        else:
+            state_lines.append(line)
+    body = "\n".join(body_lines).rstrip() + "\n"
+    return body, nav_rows, state_lines
 
 
 def main():
@@ -173,7 +183,7 @@ def main():
     # template instructions live in HTML comments and contain example tables;
     # drop them so section/nav lookups only see real content
     cleaned = re.sub(r"<!--.*?-->", "", raw_existing, flags=re.S)
-    existing, nav_rows = split_nav(cleaned)
+    existing, nav_rows, state_lines = split_tail(cleaned)
     # ids must stay unique across screens; continue after the highest one seen
     used = [int(m) for m in re.findall(r"^\|\s*U(\d+)\s*\|", existing, flags=re.M)]
     first = (max(used) + 1) if used else 1
@@ -207,6 +217,8 @@ def main():
 
     if a.nav_from and a.nav_to:
         nav_rows.append(f"| {a.nav_from} | {a.nav_via or ''} | {a.nav_to} |  | 由 ui-map.py 记录 |")
+    if state_lines:
+        existing = existing.rstrip() + "\n\n" + "\n".join(state_lines).strip() + "\n"
     if nav_rows:
         existing = existing.rstrip() + (
             "\n\n## 导航\n\n"

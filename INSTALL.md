@@ -2,7 +2,7 @@
 
 Linux 已实测（Ubuntu 22.04 / 24.04 / 26.04）；macOS 与 Windows 的 `wt.py` 分支已实现，但尚未在真机实测，第一次用先跑预检。
 
-三平台都需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及 `harness/requirements.txt` 里的三个包。
+三平台都需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及 `harness/requirements.txt` 里的四个包（Pillow 只用于截图涂白，缺它时 `--redact` 会直接报错退出）。
 
 ## 1. Linux（Ubuntu / Debian）
 

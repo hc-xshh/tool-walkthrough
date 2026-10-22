@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v4**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
+当前方法版本：**v5**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
 
 > 回答的不是「界面好不好看」，而是一个决策问题：**这个版本能不能上、能不能推给团队、上线前先修哪三件。**
 > n=1 是探索性观察，不外推；报告是决策材料，不是过程记录。
@@ -31,7 +31,7 @@
 
 Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.py` 走原生截图 / 点击，隔离靠独立用户或虚拟机。
 
-需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及三个 pip 包。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
+需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
 
 完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
 
@@ -39,28 +39,30 @@ Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.
 
 ```bash
 # 准备：建本轮目录（三平台）
-#   同时生成 trace/ shots/ logs/ artifacts/，并从 templates/ 复制
-#   tool-profile.md、ui-map.md、task-plan.md、task-trace.md、report.md 骨架
+#   生成 shots/ screens/ logs/ trace/ artifacts/，并从 templates/ 复制
+#   tool-profile.md、ui-map.md、task-plan.md、task-trace.md、report.md 骨架，
+#   外加 logs/task-trace.txt 与 logs/crawl-notes.txt
 python3 harness/wt.py new-run 2026-10-19-<tool>
 
 # 0. 先做工具调研（20–30 分钟，只读文档，不预演界面）
 #    产出 runs/<date>-<tool>/tool-profile.md（new-run 已复制模板）
 #    来源优先级与 8 项清单见 METHOD.md 的 Step 0
 
-# 1. 页面地图（30–40 分钟）：先把界面上的控件列全，再决定测什么
-#    Electron / Web 应用可直接枚举，再人工命名 + 填覆盖任务
-python3 harness/ui-map.py --port 9339 --out runs/<run>/ui-map.md --title "主窗口（首屏）"
-python3 harness/wt.py coverage runs/<run>     # 列出还没归属的控件
-
-# 2. 预检（三平台）
+# 1. 预检（三平台）
 python3 harness/wt.py preflight
 
-# 3. 启动应用（带 --run 才会写事件日志）
+# 2. 启动应用（带 --run 才会写事件日志）
 #    Linux：默认全新 HOME；需要登录态时设 WALKTHROUGH_HOME / WALKTHROUGH_DBUS
 python3 harness/wt.py --run runs/<run> launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
 #    macOS：--app 走 `open -a`；Windows：直接传 exe 路径
 python3 harness/wt.py --run runs/<run> launch --app "<AppName>" --log runs/<run>/logs/app.log
 #    macOS 要给应用传参数时，再加 `-- <参数...>`（例如 -- --new-window）
+
+# 3. 页面地图（45–90 分钟）：把产品点一遍，把界面和控件列全
+#    先启动、再枚举——ui-map.py 要连调试端口，应用没起连不上
+#    标题必须以 S 编号开头，否则 coverage 会报 has no S-number
+python3 harness/ui-map.py --port 9339 --out runs/<run>/ui-map.md --title "S1 首屏"
+python3 harness/wt.py coverage runs/<run>     # 未归属控件 + 缺首访图/缺状态矩阵
 
 # 4. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
 python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
@@ -82,6 +84,7 @@ python3 harness/cdp.py shot runs/<run>/shots/02.png
 python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 #    shots/captions.json 同时支持图注与指令：
 #    {"02-home.png": "首页", "exclude": ["t6-*"], "redact": {"*": [[10,865,300,75]]}}
+#    另有 --exclude 't6-*'（按图排除）与 --max-figure-height 90mm（压图高）
 
 # Linux 隔离桌面（可选；macOS / Windows 用独立用户或虚拟机）
 ./harness/desktop-up.sh :98 1440x900x24
@@ -119,7 +122,7 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 python3 harness/wt.py audit runs/<run>
 ```
 
-逐项检查：`report.md` 是否存在、报告里引用的截图是否都在、事件里的截图文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图（`wt.py click` 默认点在截图，`cdp.py --capture` 同理）、`harness.json` 是否存在。`audit` 只对 FAIL 返回非 0，证据为空或只有 WARN 时仍可能退 0；CI 请用 `audit --strict`（WARN 也视为失败）。
+逐项检查：`report.md` 是否存在、报告里引用的截图（`shots/` 与 `screens/`）是否都在、事件里的截图文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图（`wt.py click` 默认点在截图，`cdp.py --capture` 同理）、`harness.json` 是否存在、**任务数 8–15（只数填了结果的行）**、**`ui coverage`（界面/控件/状态矩阵/一级入口）**、**每条发现是否带「归因 / 复现」**。`audit` 只对 FAIL 返回非 0，证据为空或只有 WARN 时仍可能退 0；CI 请用 `audit --strict`（WARN 也视为失败）。
 
 **Profiles**：
 
@@ -157,7 +160,7 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 ## 方法要点
 
 1. **先定决策问题**：谁读、要做什么决定、这次不回答什么。
-2. **任务驱动，不按菜单逛**：5–8 个用户任务，覆盖首启、核心任务、产物取回、失败态、连续任务、设置。
+2. **任务驱动，不按菜单逛**：8–15 个用户任务（从页面地图派生，每屏至少一条），覆盖首启、核心任务、产物取回、失败态、连续任务、设置。
 3. **每条发现四件事**：具体元素 + 导致的后果 + 证据 + 建议；不写「用户找不到」。
 4. **0–4 严重度**：4 阻断 / 3 严重 / 2 轻微 / 1 观感 / 0 不是问题；S3/S4 必须人工复核，n=1 不写成功率。
 5. **报告先给前三**，另有「做对了什么」，防止团队把没坏的部分一起改。
