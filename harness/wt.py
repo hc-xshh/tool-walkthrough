@@ -6,15 +6,21 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py --run runs/2026-10-19-tool preflight
   python3 harness/wt.py new-run 2026-10-19-tool
   python3 harness/wt.py --run runs/2026-10-19-tool shot out.png
-  python3 harness/wt.py --run runs/2026-10-19-tool click 300 241
+  python3 harness/wt.py --run runs/2026-10-19-tool click 300 241 --shot out.png
   python3 harness/wt.py --run runs/2026-10-19-tool ocr out.png
   python3 harness/wt.py --run runs/2026-10-19-tool launch --log app.log -- /path/to/app
   python3 harness/wt.py report runs/2026-10-19-tool
-  python3 harness/wt.py audit runs/2026-10-19-tool
+  python3 harness/wt.py audit --strict runs/2026-10-19-tool
 
 Linux uses X11 tooling (ffmpeg/xdotool). macOS uses screencapture and
 cliclick (or AppleScript). Windows uses PowerShell/.NET and ctypes.
 CDP stays in cdp.py and works on all three.
+
+`shot` also writes `<png>.json` next to the image, recording where pixel (0,0)
+sits (origin) and the pixels-per-click-unit ratio (scale). OCR returns pixel
+coordinates inside the image, so pass `click --shot <png>` to land the click
+where the word actually is: multi-monitor Windows and Retina macOS otherwise
+click the wrong spot.
 
 Every command with --run (or WALKTHROUGH_RUN) appends one line to
 runs/<run>/events.jsonl: timestamp, action, target, result, duration and
@@ -37,7 +43,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OS = platform.system()  # Linux / Darwin / Windows
-WT_VERSION = "1.2.0"
+WT_VERSION = "1.3.0"
 PROFILES_DIR = ROOT / "harness" / "profiles"
 LOCK_FILE = ROOT / "harness" / "harness.lock"
 
@@ -48,6 +54,128 @@ def which_any(names):
         if p:
             return p
     return None
+
+
+def enable_dpi_awareness():
+    """Make this process DPI-aware so screenshot pixels and click coords agree.
+
+    Windows only. A non-aware process gets its coordinates virtualised by the
+    shell, so a click lands off-target on any display scaled above 100%.
+    """
+    if OS != "Windows":
+        return None
+    import ctypes
+
+    try:
+        user32 = ctypes.WinDLL("user32", use_last_error=True)
+        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        user32.SetProcessDpiAwarenessContext.restype = ctypes.c_bool
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):  # per-monitor v2
+            return "per-monitor-v2"
+    except Exception:
+        pass
+    try:
+        shcore = ctypes.WinDLL("shcore")
+        shcore.SetProcessDpiAwareness.argtypes = [ctypes.c_int]
+        shcore.SetProcessDpiAwareness.restype = ctypes.c_int
+        if shcore.SetProcessDpiAwareness(2) == 0:  # per-monitor
+            return "per-monitor"
+    except Exception:
+        pass
+    try:
+        if ctypes.windll.user32.SetProcessDPIAware():
+            return "system"
+    except Exception:
+        pass
+    return None
+
+
+def _x11_size(display):
+    """Screen size in pixels, straight from the X server."""
+    p = which_any(["xdpyinfo"])
+    if not p:
+        return (0, 0)
+    try:
+        out = subprocess.run([p, "-display", display], capture_output=True, text=True, timeout=15)
+        m = re.search(r"dimensions:\s+(\d+)x(\d+)", out.stdout or "")
+        return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
+    except Exception:
+        return (0, 0)
+
+
+def _png_size(png):
+    """Read width/height out of a PNG header without extra dependencies."""
+    try:
+        with open(png, "rb") as fh:
+            head = fh.read(24)
+        if head[:8] != b"\x89PNG\r\n\x1a\n":
+            return (0, 0)
+        return (int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big"))
+    except Exception:
+        return (0, 0)
+
+
+def _macos_logical_size():
+    """Desktop size in points (Finder reports the same units clicks use)."""
+    try:
+        p = subprocess.run(
+            ["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
+            capture_output=True, text=True, timeout=15,
+        )
+        nums = [int(x) for x in re.findall(r"-?\d+", p.stdout or "")]
+        if len(nums) >= 4:
+            return (nums[2] - nums[0], nums[3] - nums[1])
+    except Exception:
+        pass
+    return (0, 0)
+
+
+def desktop_metrics(png=None):
+    """Map screenshot pixels onto click coordinates.
+
+    `origin` is where pixel (0,0) of the capture sits in the coordinate space
+    the click API uses; `scale` is capture pixels per click unit. Windows grabs
+    the whole virtual desktop (negative origins with a left-hand secondary
+    monitor); macOS captures physical pixels while clicks use points (Retina).
+    """
+    if OS == "Windows":
+        enable_dpi_awareness()
+        import ctypes
+
+        g = ctypes.windll.user32.GetSystemMetrics
+        return {
+            "origin_x": g(76), "origin_y": g(77),  # SM_XVIRTUALSCREEN / SM_YVIRTUALSCREEN
+            "width": g(78), "height": g(79),
+            "scale": 1.0,
+            "source": "GetSystemMetrics(virtual screen)",
+        }
+    if OS == "Darwin":
+        lw, lh = _macos_logical_size()
+        pw, ph = _png_size(png) if png else (0, 0)
+        scale = round(pw / lw, 3) if lw and pw else 1.0
+        return {
+            "origin_x": 0, "origin_y": 0,
+            "width": pw or lw, "height": ph or lh,
+            "scale": scale,
+            "source": "screencapture + Finder bounds",
+        }
+    w, h = _png_size(png) if png else (0, 0)
+    return {"origin_x": 0, "origin_y": 0, "width": w, "height": h, "scale": 1.0, "source": "x11"}
+
+
+def shot_meta_path(png):
+    return Path(str(png) + ".json")
+
+
+def read_shot_meta(png):
+    path = shot_meta_path(png)
+    if not path.exists():
+        return None
+    try:
+        # utf-8-sig: hand-edited sidecars (e.g. PowerShell) often carry a BOM
+        return json.loads(path.read_text(encoding="utf-8-sig"))
+    except Exception:
+        return None
 
 
 def find_chrome():
@@ -116,6 +244,27 @@ def tesseract_version():
         return None
 
 
+def tesseract_langs():
+    """Installed language packs, e.g. ['chi_sim', 'eng', 'osd']."""
+    p = which_any(["tesseract"])
+    if not p:
+        return []
+    try:
+        out = subprocess.run([p, "--list-langs"], capture_output=True, text=True, timeout=10)
+        lines = (out.stdout or "").splitlines()[1:]  # first line is the banner
+        return [ln.strip() for ln in lines if re.fullmatch(r"[a-z0-9_]+", ln.strip() or "")]
+    except Exception:
+        return []
+
+
+def module_available(name):
+    try:
+        __import__(name)
+        return True
+    except Exception:
+        return False
+
+
 def load_lock():
     if LOCK_FILE.exists():
         try:
@@ -154,7 +303,9 @@ def read_events(run):
     path = run / "events.jsonl"
     if not path.exists():
         return events
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
+    # utf-8-sig: a BOM would make the first line unparsable and silently drop
+    # every event, which is exactly the kind of false PASS audit exists to stop
+    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
         try:
             events.append(json.loads(line))
         except json.JSONDecodeError:
@@ -164,8 +315,6 @@ def read_events(run):
 
 def write_harness_json(run, prof):
     path = run / "harness.json"
-    if path.exists():
-        return
     lock = load_lock()
     data = {
         "schema": 1,
@@ -178,6 +327,18 @@ def write_harness_json(run, prof):
         "lock": lock,
         "created": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
+    if path.exists():
+        # Keep hand-edited extras (e.g. "raters") and the original timestamp,
+        # but refresh the machine facts: re-running new-run with another
+        # --profile must not leave a stale profile behind.
+        try:
+            old = json.loads(path.read_text(encoding="utf-8-sig"))
+        except Exception:
+            old = {}
+        if isinstance(old, dict):
+            data["created"] = old.get("created", data["created"])
+            for key, value in old.items():
+                data.setdefault(key, value)
     path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
@@ -204,18 +365,37 @@ def cmd_preflight(a):
     tess_ver = tesseract_version()
     if tess and tess_ver and tess_min and tess_ver[:2] < tess_min[:2]:
         tess_ok = False
-    say("tesseract", tess_ok, f"{tess or 'missing'} {'.'.join(map(str, tess_ver or ()))}".strip(), warn_only=True)
+    langs = tesseract_langs() if tess else []
+    wanted = [x for x in (prof.get("ocr_lang") or "eng").split("+") if x]
+    missing_langs = [x for x in wanted if x not in langs]
+    if missing_langs:
+        tess_ok = False
+    tess_detail = f"{tess or 'missing'} {'.'.join(map(str, tess_ver or ()))}".strip()
+    if langs:
+        tess_detail += f" langs={','.join(langs)}"
+    if missing_langs:
+        tess_detail += f" missing={','.join(missing_langs)} (put <lang>.traineddata in tessdata)"
+    say("tesseract", tess_ok, tess_detail, warn_only=True)
 
     chrome = find_chrome()
     say("chrome", bool(chrome), chrome or "install Chrome/Chromium", warn_only=True)
 
+    cdp_ok = all(module_available(m) for m in ("requests", "websocket"))
+    say(
+        "cdp deps",
+        cdp_ok,
+        "requests + websocket-client" if cdp_ok else "pip install -r harness/requirements.txt",
+        warn_only=True,
+    )
+
     if OS == "Linux":
-        for b in ("ffmpeg", "xdotool", "Xvfb", "openbox", "dbus-daemon"):
+        for b in ("ffmpeg", "xdotool", "Xvfb", "openbox", "dbus-daemon", "xdpyinfo"):
             p = which_any([b])
             say(b, bool(p), p or "missing (Linux desktop walkthroughs)", warn_only=True)
         disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
-        ok = subprocess.run(
-            ["xdpyinfo", "-display", disp], capture_output=True, text=True
+        xdpy = which_any(["xdpyinfo"])
+        ok = bool(xdpy) and subprocess.run(
+            [xdpy, "-display", disp], capture_output=True, text=True
         ).returncode == 0
         rc |= say(f"display {disp}", ok, "ok" if ok else "start desktop-up.sh")
     elif OS == "Darwin":
@@ -235,7 +415,7 @@ def cmd_preflight(a):
         "screenshot",
         "click" if OS != "Linux" or which_any(["xdotool"]) else "click:unavailable",
         "ocr" if tess_ok else "ocr:unavailable",
-        "cdp",
+        "cdp" if cdp_ok else "cdp:unavailable",
     ]
     print(f"{'capabilities':<24} {'INFO':<5} {', '.join(caps)}")
     if lock and lock.get("wt_version") and lock["wt_version"] != WT_VERSION:
@@ -255,12 +435,30 @@ def cmd_profiles(a):
 
 def cmd_new_run(a):
     run = (ROOT / "runs" / a.name).resolve()
-    for sub in ("shots", "logs", "artifacts"):
+    for sub in ("shots", "logs", "trace", "artifacts"):
         (run / sub).mkdir(parents=True, exist_ok=True)
+    tpl_dir = ROOT / "templates"
+    scaffold = {
+        "tool-profile.md": run / "tool-profile.md",
+        "task-plan.md": run / "task-plan.md",
+        "report.md": run / "report.md",
+        "task-trace.md": run / "trace" / "task-trace.md",
+    }
+    copied = []
+    for tpl, dest in scaffold.items():
+        src = tpl_dir / tpl
+        if src.exists() and not dest.exists():
+            shutil.copyfile(src, dest)
+            copied.append(str(dest.relative_to(run)))
+    trace_log = run / "logs" / "task-trace.txt"
+    trace_log.touch(exist_ok=True)
     write_harness_json(run, profile(a))
     print(run)
+    for rel in copied:
+        print(f"scaffolded {rel}")
+    print(f"scaffolded logs/{trace_log.name}")
     print("runs/ is git-ignored. Do not 'git add -f' this directory.")
-    return {"target": str(run)}
+    return {"target": str(run), "detail": f"{len(copied)} templates + trace log"}
 
 
 def cmd_shot(a):
@@ -268,9 +466,12 @@ def cmd_shot(a):
     out = Path(a.out).expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
-    geom = a.geometry or prof.get("geometry") or "1440x900"
+    geom = a.geometry or prof.get("geometry") or ""
 
     if OS == "Linux":
+        if not geom or geom == "screen":
+            w, h = _x11_size(disp)
+            geom = f"{w}x{h}" if w and h else "1440x900"
         subprocess.run(
             [
                 "ffmpeg", "-hide_banner", "-loglevel", "error",
@@ -285,6 +486,19 @@ def cmd_shot(a):
         ps = r'''
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+# Be DPI-aware before measuring, otherwise SystemInformation reports a
+# virtualised (logical) size while CopyFromScreen grabs physical pixels.
+$sig = @"
+using System;
+using System.Runtime.InteropServices;
+public class WtDpi {
+  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
+  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+}
+"@
+try { Add-Type -TypeDefinition $sig -ErrorAction Stop } catch {}
+try { [WtDpi]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null }
+catch { try { [WtDpi]::SetProcessDPIAware() | Out-Null } catch {} }
 $vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
 $bmp = New-Object System.Drawing.Bitmap $vs.Width, $vs.Height
 $g = [System.Drawing.Graphics]::FromImage($bmp)
@@ -304,36 +518,73 @@ $g.Dispose(); $bmp.Dispose()
             os.unlink(script)
     else:
         raise SystemExit(f"unsupported OS: {OS}")
+
+    meta = desktop_metrics(out)
+    pw, ph = _png_size(out)
+    meta["width"] = meta.get("width") or pw
+    meta["height"] = meta.get("height") or ph
+    meta["screenshot"] = str(out)
+    shot_meta_path(out).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(out)
-    return {"target": str(out), "screenshot": str(out)}
+    print(
+        f"shot origin={meta['origin_x']},{meta['origin_y']} "
+        f"size={meta['width']}x{meta['height']} scale={meta['scale']} ({meta['source']})"
+    )
+    return {
+        "target": str(out),
+        "screenshot": str(out),
+        "origin_x": meta["origin_x"],
+        "origin_y": meta["origin_y"],
+        "scale": meta["scale"],
+        "detail": f"{meta['width']}x{meta['height']}",
+    }
 
 
 def cmd_click(a):
     prof = profile(a)
     disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
+    x, y = float(a.x), float(a.y)
+    note = ""
+    if getattr(a, "shot", None):
+        meta = read_shot_meta(Path(a.shot).expanduser().resolve())
+        if meta:
+            scale = meta.get("scale") or 1.0
+            x = meta.get("origin_x", 0) + x / scale
+            y = meta.get("origin_y", 0) + y / scale
+            note = f" from {a.shot} (origin={meta.get('origin_x')},{meta.get('origin_y')} scale={scale})"
+        else:
+            print(f"warning: no sidecar for {a.shot}; using raw coordinates", file=sys.stderr)
+    if getattr(a, "dry_run", False):
+        print(f"would click {x:.0f},{y:.0f} button={a.button} os={OS}{note}")
+        return {"target": f"{x:.0f},{y:.0f}", "detail": f"dry-run button={a.button}{note}"}
     if OS == "Linux":
         subprocess.run(
-            ["xdotool", "mousemove", str(a.x), str(a.y), "click", str(a.button)],
+            ["xdotool", "mousemove", str(int(x)), str(int(y)), "click", str(a.button)],
             check=True, env=dict(os.environ, DISPLAY=disp),
         )
     elif OS == "Darwin":
         clic = which_any(["cliclick"])
         if clic:
-            subprocess.run([clic, f"c:{a.x},{a.y}"], check=True)
+            subprocess.run([clic, f"c:{x:.0f},{y:.0f}"], check=True)
         else:
-            script = f'tell application "System Events" to click at {{{a.x}, {a.y}}}'
+            script = f'tell application "System Events" to click at {{{x:.0f}, {y:.0f}}}'
             subprocess.run(["osascript", "-e", script], check=True)
     elif OS == "Windows":
+        enable_dpi_awareness()
         import ctypes
         user32 = ctypes.windll.user32
-        user32.SetCursorPos(int(a.x), int(a.y))
+        if not user32.SetCursorPos(int(x), int(y)):
+            raise SystemExit(f"SetCursorPos failed at {x:.0f},{y:.0f}")
         down, up = (0x0002, 0x0004) if a.button == 1 else (0x0008, 0x0010)
         user32.mouse_event(down, 0, 0, 0, 0)
         user32.mouse_event(up, 0, 0, 0, 0)
     else:
         raise SystemExit(f"unsupported OS: {OS}")
-    print(f"clicked {a.x},{a.y} button={a.button} os={OS}")
-    return {"target": f"{a.x},{a.y}", "detail": f"button={a.button}"}
+    print(f"clicked {x:.0f},{y:.0f} button={a.button} os={OS}{note}")
+    rec = {"target": f"{x:.0f},{y:.0f}", "detail": f"button={a.button}{note}"}
+    if getattr(a, "shot", None):
+        rec["screenshot"] = str(Path(a.shot).expanduser().resolve())
+    return rec
 
 
 def cmd_ocr(a):
@@ -386,16 +637,22 @@ def cmd_launch(a):
             DBUS_SESSION_BUS_ADDRESS=os.environ.get(
                 "WALKTHROUGH_DBUS", f"unix:path={base}/runtime/bus"
             ),
-            GDK_BACKEND="x11",
-            LIBGL_ALWAYS_SOFTWARE="1",
-            WEBKIT_DISABLE_COMPOSITING_MODE="1",
-            WEBKIT_DISABLE_DMABUF_RENDERER="1",
         )
+        # Software rendering is for headless/CI only. On a real desktop it
+        # changes animation and scroll smoothness, which is exactly what a
+        # walkthrough is supposed to judge.
+        if prof.get("software_gl"):
+            env.update(
+                GDK_BACKEND="x11",
+                LIBGL_ALWAYS_SOFTWARE="1",
+                WEBKIT_DISABLE_COMPOSITING_MODE="1",
+                WEBKIT_DISABLE_DMABUF_RENDERER="1",
+            )
         with open(log, "wb") as fh:
             p = subprocess.Popen(cmd, stdout=fh, stderr=fh, env=env, start_new_session=True)
     elif OS == "Darwin":
         if a.app:
-            cmd = ["open", "-a", a.app, "--args", *cmd]
+            cmd = ["open", "-a", a.app] + (["--args", *cmd] if cmd else [])
         with open(log, "wb") as fh:
             p = subprocess.Popen(cmd, stdout=fh, stderr=fh, env=env, start_new_session=True)
     elif OS == "Windows":
@@ -433,19 +690,34 @@ def cmd_audit(a):
         f"{len(refs)} refs, {len(missing_refs)} missing",
     ))
 
-    shots = [e for e in events if e.get("action") in ("shot", "cdp:shot")]
-    bad_shots = []
+    SHOT_ACTIONS = {"shot", "cdp:shot"}
+    CLICK_ACTIONS = {"click", "cdp:click", "cdp:clicktext", "cdp:clickel", "cdp:clickxy"}
+
+    shots = [e for e in events if e.get("action") in SHOT_ACTIONS and e.get("result") != "error"]
+    bad_shots, unattributed = [], 0
     for e in shots:
-        p = Path(e.get("screenshot", ""))
+        raw = str(e.get("screenshot") or "").strip()
+        if not raw:
+            unattributed += 1  # a shot that recorded no path proves nothing
+            continue
+        p = Path(raw)
         if not p.is_absolute():
             candidates = [run / p, run.parent / p, Path.cwd() / p]
             p = next((c for c in candidates if c.exists()), p)
         if not p.exists():
             bad_shots.append(str(p))
+    if not shots:
+        shot_status = "FAIL"
+    elif bad_shots:
+        shot_status = "FAIL"
+    elif unattributed:
+        shot_status = "WARN"
+    else:
+        shot_status = "PASS"
     checks.append((
         "shot files",
-        "PASS" if shots and not bad_shots else ("FAIL" if bad_shots else "WARN"),
-        f"{len(shots)} shots, {len(bad_shots)} missing",
+        shot_status,
+        f"{len(shots)} shots, {len(bad_shots)} missing, {unattributed} without a path",
     ))
 
     errors = [e for e in events if e.get("result") == "error"]
@@ -457,8 +729,8 @@ def cmd_audit(a):
 
     gaps = 0
     for i, e in enumerate(events):
-        if e.get("action") == "click":
-            if not any(x.get("action") == "shot" for x in events[i + 1:i + 6]):
+        if e.get("action") in CLICK_ACTIONS:
+            if not any(x.get("action") in SHOT_ACTIONS for x in events[i + 1:i + 6]):
                 gaps += 1
     checks.append((
         "click -> shot",
@@ -482,7 +754,9 @@ def cmd_audit(a):
         for e in events[-5:]:
             print(f"  {e.get('ts','')} {e.get('action',''):<8} {e.get('result',''):<5} {e.get('target','')}")
 
-    return 1 if fails else 0
+    if fails or (getattr(a, "strict", False) and warns):
+        return 1
+    return 0
 
 
 def main():
@@ -498,7 +772,7 @@ def main():
     p = sub.add_parser("profiles", help="list platform profiles")
     p.set_defaults(func=cmd_profiles)
 
-    p = sub.add_parser("new-run", help="create runs/<name>/{shots,logs,artifacts}")
+    p = sub.add_parser("new-run", help="create runs/<name>/{shots,logs,trace,artifacts} + templates")
     p.add_argument("name")
     p.set_defaults(func=cmd_new_run)
 
@@ -513,6 +787,9 @@ def main():
     p.add_argument("y", type=int)
     p.add_argument("--button", type=int, default=1)
     p.add_argument("--display", default=None)
+    p.add_argument("--shot", default=None,
+                   help="translate coordinates from this shot's pixel space (uses its .json sidecar)")
+    p.add_argument("--dry-run", action="store_true", help="print the translated target without clicking")
     p.set_defaults(func=cmd_click)
 
     p = sub.add_parser("ocr", help="OCR an image and print words with boxes")
@@ -536,11 +813,12 @@ def main():
 
     p = sub.add_parser("audit", help="cross-check events, report and evidence")
     p.add_argument("run_dir")
+    p.add_argument("--strict", action="store_true", help="treat WARN as failure (use in CI)")
     p.set_defaults(func=cmd_audit)
 
     a = ap.parse_args()
-    if a.cmd == "launch" and not a.command:
-        ap.error("launch needs a command")
+    if a.cmd == "launch" and not a.command and not a.app:
+        ap.error("launch needs a command, or --app on macOS")
 
     run = resolve_run(a)
     started = time.monotonic()

@@ -6,7 +6,8 @@
   "ocr_lang": "chi_sim+eng",
   "ocr_psm": 11,
   "display": ":0",
-  "geometry": "1920x1080",
+  "geometry": "screen",
+  "software_gl": false,
   "isolation": "existing GNOME session; no isolation",
-  "notes": "Default for full walkthroughs. Needs DISPLAY=:0 and XAUTHORITY (Xwayland auth file) for native dialogs; CDP for app-internal actions."
+  "notes": "Default for full walkthroughs. Needs DISPLAY=:0 and XAUTHORITY (Xwayland auth file) for native dialogs; CDP for app-internal actions. Keeps the GPU on purpose: forcing software GL would change the animation and scroll feel this profile exists to judge."
 }

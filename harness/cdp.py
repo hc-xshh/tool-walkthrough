@@ -96,11 +96,23 @@ class CDP:
 
     def eval(self, expr):
         if self.nested:
-            # VS Code webview: real UI sits in an inner iframe one level down
-            expr = ("(() => { const DOC = document.querySelector('iframe')?.contentDocument || document;"
-                    f" return ({expr.replace('document', 'DOC')}); }})()")
+            # VS Code webview: the real UI sits in an inner iframe one level
+            # down. Shadow `document` with a parameter instead of rewriting the
+            # expression text, which used to corrupt identifiers such as
+            # documentElement and any string literal containing "document".
+            expr = (
+                "(function (document) {"
+                "  const inner = document.querySelector('iframe')?.contentDocument || document;"
+                f"  return (function (document) {{ return ({expr}); }})(inner);"
+                "})(document)"
+            )
         r = self.cmd("Runtime.evaluate", {"expression": expr, "returnByValue": True})
-        return r.get("result", {}).get("result", {}).get("value")
+        res = r.get("result", {})
+        exc = res.get("exceptionDetails")
+        if exc:
+            text = (exc.get("exception") or {}).get("description") or exc.get("text") or "JS exception"
+            raise RuntimeError(text.splitlines()[0])
+        return res.get("result", {}).get("value")
 
 
 def main():
@@ -129,12 +141,16 @@ def main():
             print(json.dumps(c.eval(a.arg), ensure_ascii=False))
         elif a.op == "click":
             sel = json.dumps(a.arg)
-            print(c.eval(f"""(() => {{
+            out = c.eval(f"""(() => {{
               const el = document.querySelector({sel});
               if (!el) return 'not found';
               el.scrollIntoView({{block:'center'}}); el.click();
               return 'clicked: ' + (el.innerText || el.tagName).slice(0,40);
-            }})()"""))
+            }})()""")
+            print(out)
+            if out == "not found":
+                status, detail = "error", f"selector not found: {a.arg}"
+                raise SystemExit(1)
         elif a.op == "clickxy":
             x, y = (float(v) for v in a.arg.split(","))
             for t in ("mousePressed", "mouseReleased"):
@@ -143,7 +159,9 @@ def main():
             print(f"clicked at {x:.0f},{y:.0f}")
         elif a.op == "type":
             c.cmd("Input.insertText", {"text": a.arg or ""})
+            # Log the length, not the text: events.jsonl is copied into reports.
             print(f"typed {len(a.arg or '')} chars")
+            detail = f"{len(a.arg or '')} chars"
         elif a.op == "key":
             key = a.arg or "Enter"
             code = {"Enter": 13, "Escape": 27, "Tab": 9}.get(key, 13)
@@ -181,8 +199,8 @@ def main():
             }})()""")
             if not rect:
                 print("not found")
-                status, detail = "error", "not found"
-                return
+                status, detail = "error", f"label not found: {a.arg}"
+                raise SystemExit(1)
             if a.op == "clicktext":
                 c.eval(f"""(() => {{
                   const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
@@ -214,7 +232,9 @@ def main():
         status, detail = "error", f"{type(e).__name__}: {e}"
         raise
     finally:
-        _log(a.op, a.arg, status, started, screenshot=shot_path, detail=detail)
+        # never write the typed text itself into events.jsonl
+        logged_target = None if a.op == "type" else a.arg
+        _log(a.op, logged_target, status, started, screenshot=shot_path, detail=detail)
 
 
 if __name__ == "__main__":

@@ -15,12 +15,40 @@ import base64
 import json
 import os
 import pathlib
+import re
 import shutil
 import subprocess
 import sys
 import tempfile
 
 import markdown
+
+# ![alt](shots/01.png) -> inline data URI, so the temp-dir HTML still has images
+MD_IMAGE = re.compile(r"(!\[[^\]]*\]\()([^)\s]+)(\))")
+MIME = {
+    "png": "image/png",
+    "jpg": "image/jpeg",
+    "jpeg": "image/jpeg",
+    "gif": "image/gif",
+    "webp": "image/webp",
+}
+
+
+def inline_local_images(md_text, run):
+    """Embed images referenced from report.md; Chrome prints from a temp dir."""
+
+    def repl(m):
+        head, src, tail = m.group(1), m.group(2), m.group(3)
+        if src.startswith(("data:", "http://", "https://", "#")):
+            return m.group(0)
+        path = (run / src).resolve()
+        mime = MIME.get(path.suffix.lower().lstrip("."))
+        if not mime or not path.is_file():
+            return m.group(0)
+        b64 = base64.b64encode(path.read_bytes()).decode()
+        return f"{head}data:{mime};base64,{b64}{tail}"
+
+    return MD_IMAGE.sub(repl, md_text)
 
 
 def find_chrome():
@@ -66,6 +94,7 @@ def main():
 
     run = pathlib.Path(a.run_dir).resolve()
     md_text = (run / "report.md").read_text(encoding="utf-8")
+    md_text = inline_local_images(md_text, run)
     body = markdown.markdown(md_text, extensions=["tables", "fenced_code", "sane_lists"])
 
     caps = {}
@@ -81,6 +110,7 @@ def main():
 
     html = f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
+<base href="{run.as_uri()}/">
 <title>{run.name}</title>
 <style>
   @page {{ size: A4; margin: 18mm 16mm 16mm; }}
@@ -111,11 +141,24 @@ def main():
         html_path = pathlib.Path(td) / "report.html"
         html_path.write_text(html, encoding="utf-8")
         out = (run / a.out).resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
         chrome = find_chrome()
-        subprocess.run([
+        # A private profile: printing through the user's live profile fails
+        # ("exit 21") whenever Chrome is already running.
+        profile = pathlib.Path(td) / "chrome-profile"
+        cmd = [
             chrome, "--headless=new", "--disable-gpu", "--no-sandbox",
-            "--no-pdf-header-footer", f"--print-to-pdf={out}", f"file://{html_path}",
-        ], check=True, capture_output=True, timeout=180)
+            f"--user-data-dir={profile}",
+            "--no-pdf-header-footer", f"--print-to-pdf={out}", html_path.as_uri(),
+        ]
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+        if proc.returncode != 0:
+            sys.exit(
+                f"chrome failed (exit {proc.returncode}) printing {out}\n"
+                f"{(proc.stderr or proc.stdout or '').strip()[:1500]}"
+            )
+        if not out.exists():
+            sys.exit(f"chrome exited 0 but wrote no PDF: {out}")
     print(out, out.stat().st_size)
 
 

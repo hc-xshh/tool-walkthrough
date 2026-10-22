@@ -3,7 +3,7 @@
 
 Usage: /usr/bin/python3 harness/portal-shot.py --out shots/full.png
 Requires the user to have granted the screenshot permission once; the portal
-returns a file URI, which we copy to --out.
+returns a file URI, which we copy to --out and then delete.
 """
 import argparse
 import os
@@ -22,25 +22,34 @@ a = ap.parse_args()
 
 bus = Gio.bus_get_sync(Gio.BusType.SESSION, None)
 token = f"walkthrough_shot_{os.getpid()}"
+# The portal derives the Request path from the caller's unique name + token, so
+# it can be predicted and subscribed to before the call: a fast reply would
+# otherwise be matched (or dropped) by a handler that ignores the path.
+sender = (bus.get_unique_name() or "").lstrip(":").replace(".", "_")
+expected = f"/org/freedesktop/portal/desktop/request/{sender}/{token}"
 opts = {
     "handle_token": GLib.Variant("s", token),
     "interactive": GLib.Variant("b", False),
 }
 loop = GLib.MainLoop()
-state = {"handle": None, "result": None}
+state = {"result": None}
 
-def on_response(conn, sender, path, iface, signal, params):
-    if state["handle"] and path != state["handle"]:
+
+def on_response(conn, sender_name, path, iface, signal, params):
+    if path != expected:
         return
-    code, results = params.unpack()
-    state["result"] = (code, results)
+    state["result"] = params.unpack()
     loop.quit()
+
 
 bus.signal_subscribe(
     "org.freedesktop.portal.Desktop",
     "org.freedesktop.portal.Request",
     "Response",
-    None, None, Gio.DBusSignalFlags.NONE, on_response,
+    expected,
+    None,
+    Gio.DBusSignalFlags.NONE,
+    on_response,
 )
 res = bus.call_sync(
     "org.freedesktop.portal.Desktop",
@@ -48,9 +57,14 @@ res = bus.call_sync(
     "org.freedesktop.portal.Screenshot",
     "Screenshot",
     GLib.Variant("(sa{sv})", ("", opts)),
-    None, Gio.DBusCallFlags.NONE, 30000, None,
+    None,
+    Gio.DBusCallFlags.NONE,
+    30000,
+    None,
 )
-state["handle"] = res.unpack()[0]
+handle = res.unpack()[0]
+if handle != expected:
+    sys.exit(f"unexpected request handle: {handle} (expected {expected})")
 GLib.timeout_add_seconds(30, lambda: (loop.quit(), False)[1])
 loop.run()
 if not state["result"] or state["result"][0] != 0:
@@ -58,5 +72,12 @@ if not state["result"] or state["result"][0] != 0:
 uri = state["result"][1]["uri"]
 src = urllib.parse.unquote(urllib.parse.urlparse(uri).path)
 os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
-shutil.copyfile(src, a.out)
+try:
+    shutil.copyfile(src, a.out)
+finally:
+    # portal leaves the PNG in ~/.cache or /tmp; do not accumulate them
+    try:
+        os.unlink(src)
+    except OSError:
+        pass
 print(a.out)
