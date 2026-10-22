@@ -954,7 +954,7 @@ def cmd_audit(a):
         f"{len(refs)} refs, {len(missing_refs)} missing",
     ))
 
-    SHOT_ACTIONS = {"shot", "cdp:shot"}
+    SHOT_ACTIONS = {"shot", "cdp:shot", "shot-window"}
     CLICK_ACTIONS = {"click", "cdp:click", "cdp:clicktext", "cdp:clickel", "cdp:clickxy"}
 
     shot_events = [e for e in events if e.get("action") in SHOT_ACTIONS and e.get("result") != "error"]

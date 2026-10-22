@@ -65,4 +65,25 @@ $g = [System.Drawing.Graphics]::FromImage($bmp)
 $g.CopyFromScreen($r.Left, $r.Top, 0, 0, $bmp.Size)
 $bmp.Save($Out, [System.Drawing.Imaging.ImageFormat]::Png)
 $g.Dispose(); $bmp.Dispose()
+
+# Keep the evidence stream honest: a window shot is a shot event too, otherwise
+# `wt.py audit` sees clicks with no screenshot and reports them as unpaired.
+if ($env:WALKTHROUGH_RUN) {
+    $runDir = $env:WALKTHROUGH_RUN
+    if (Test-Path $runDir) {
+        $abs = (Resolve-Path $Out).Path
+        $rec = [ordered]@{
+            ts       = (Get-Date).ToString("yyyy-MM-ddTHH:mm:sszzz")
+            os       = "Windows"
+            action   = "shot-window"
+            result   = "ok"
+            target   = $abs
+            screenshot = $abs
+            detail   = "$w x $hgt"
+        }
+        $json = $rec | ConvertTo-Json -Compress
+        Add-Content -LiteralPath (Join-Path $runDir "events.jsonl") -Value $json -Encoding UTF8
+    }
+}
+
 Write-Output "$Out ${w}x${hgt}"
