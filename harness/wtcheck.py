@@ -8,50 +8,77 @@ from pathlib import Path
 
 from wtlib import read_events
 
+
+def _read_stripped(path):
+    """File text without HTML comments (templates keep examples in comments)."""
+    return re.sub(r"<!--.*?-->", "",
+                  path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
+
+
+def _sections(text):
+    """[(title, lines)] split on '## ' headings, in file order."""
+    out, title, lines = [], "", []
+    for raw in text.splitlines():
+        s = raw.strip()
+        if s.startswith("## "):
+            if title or lines:
+                out.append((title, lines))
+            title, lines = s[3:].strip(), []
+        else:
+            lines.append(raw)
+    if title or lines:
+        out.append((title, lines))
+    return out
+
+
+def _table(lines, required=()):
+    """Rows of the first markdown table in `lines`, as dicts keyed by header.
+
+    Returns [] when no table is present or the header lacks a required column.
+    """
+    header, rows = None, []
+    for raw in lines:
+        s = raw.strip()
+        if not s.startswith("|"):
+            continue
+        cells = [c.strip() for c in s.strip("|").split("|")]
+        if header is None:
+            header = {c: i for i, c in enumerate(cells)}
+            if not all(k in header for k in required):
+                return []
+            continue
+        if all(set(c) <= set("-: ") for c in cells):
+            continue  # separator row
+        rows.append({k: (cells[i] if i < len(cells) else "") for k, i in header.items()})
+    return rows
+
+
+def _cell(row, key):
+    return (row.get(key) or "").strip()
+
+
 def read_ui_map(run):
     """Parse ui-map.md: rows with a U-id, their covered task ids and notes."""
     path = run / "ui-map.md"
     if not path.exists():
         return None
     controls = []
-    header = None
-    screen = "（未命名界面）"
-    text = path.read_text(encoding="utf-8", errors="replace")
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)  # ignore template examples
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            screen = line[3:].strip()
-            header = None
+    for title, lines in _sections(_read_stripped(path)):
+        if not title.startswith("S"):
             continue
-        if not line.startswith("|"):
-            header = None if not line else header
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            if any(c.upper() == "ID" for c in cells):
-                header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue  # separator row
-        uid = cells[header.get("ID", 0)] if cells else ""
-        if not re.fullmatch(r"U\d+", uid):
-            continue
-        cover_idx = header.get("覆盖任务")
-        note_idx = header.get("备注")
-        state_idx = header.get("状态")
-        region_idx = header.get("区域")
-        type_idx = header.get("类型")
-        covers = cells[cover_idx] if cover_idx is not None and cover_idx < len(cells) else ""
-        note = cells[note_idx] if note_idx is not None and note_idx < len(cells) else ""
-        state = cells[state_idx] if state_idx is not None and state_idx < len(cells) else ""
-        region = cells[region_idx] if region_idx is not None and region_idx < len(cells) else ""
-        kind = cells[type_idx] if type_idx is not None and type_idx < len(cells) else ""
-        task_ids = re.findall(r"T\d+", covers)
-        controls.append({
-            "id": uid, "screen": screen, "covers": task_ids,
-            "note": note.strip(), "state": state, "region": region.strip(), "type": kind.strip(),
-        })
+        for row in _table(lines, required=("ID",)):
+            uid = _cell(row, "ID")
+            if not re.fullmatch(r"U\d+", uid):
+                continue
+            controls.append({
+                "id": uid,
+                "screen": title,
+                "covers": re.findall(r"T\d+", _cell(row, "覆盖任务")),
+                "note": _cell(row, "备注"),
+                "state": _cell(row, "状态"),
+                "region": _cell(row, "区域"),
+                "type": _cell(row, "类型"),
+            })
     return controls
 
 
@@ -62,28 +89,15 @@ def read_nav_edges(run):
     path = run / "ui-map.md"
     if not path.exists():
         return []
-    text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
-    in_nav, header = False, None
     edges = []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            in_nav = line[3:].strip().startswith("导航")
-            header = None
+    for title, lines in _sections(_read_stripped(path)):
+        if not title.startswith("导航"):
             continue
-        if not in_nav or not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue
-        idx = {k: header.get(k) for k in ("从", "控件", "到")}
-        vals = {k: (cells[i] if i is not None and i < len(cells) else "") for k, i in idx.items()}
-        if not vals["从"] and not vals["到"]:
-            continue
-        edges.append({"from": vals["从"], "control": vals["控件"], "to": vals["到"]})
+        for row in _table(lines):
+            src, ctrl, dst = _cell(row, "从"), _cell(row, "控件"), _cell(row, "到")
+            if not src and not dst:
+                continue
+            edges.append({"from": src, "control": ctrl, "to": dst})
     return edges
 
 
@@ -156,36 +170,21 @@ def read_state_matrix(run):
     path = run / "ui-map.md"
     if not path.exists():
         return None
-    text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
-    in_block, header, rows = False, None, []
     seen_section = False
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            in_block = line[3:].strip().startswith("状态")
-            seen_section = seen_section or in_block
-            header = None
+    rows = []
+    for title, lines in _sections(_read_stripped(path)):
+        if not title.startswith("状态"):
             continue
-        if not in_block or not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue
-
-        def cell(key):
-            i = header.get(key)
-            return cells[i] if i is not None and i < len(cells) else ""
-
-        if not cell("屏幕"):
-            continue
-        rows.append({
-            "screen": cell("屏幕"), "state": cell("状态"),
-            "how": cell("怎么触发"), "reached": cell("本轮到没到"),
-            "note": cell("覆盖任务或原因"),
-        })
+        seen_section = True
+        for row in _table(lines):
+            screen = _cell(row, "屏幕")
+            if not screen:
+                continue
+            rows.append({
+                "screen": screen, "state": _cell(row, "状态"),
+                "how": _cell(row, "怎么触发"), "reached": _cell(row, "本轮到没到"),
+                "note": _cell(row, "覆盖任务或原因"),
+            })
     return rows if seen_section else None
 
 
@@ -288,27 +287,15 @@ def count_planned_tasks(plan_path):
     """Task rows that carry a result — template examples have none."""
     if not plan_path.exists():
         return 0, 0
-    header = None
     total, filled = 0, 0
-    for raw in plan_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw.strip()
-        if not line.startswith("|"):
-            header = None if not line else header
+    for title, lines in _sections(_read_stripped(plan_path)):
+        if not title.startswith("任务"):
             continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            if any(c.upper() == "ID" for c in cells):
-                header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue
-        idx = header.get("ID")
-        if idx is None or idx >= len(cells) or not re.fullmatch(r"T\d+", cells[idx]):
-            continue
-        total += 1
-        res_idx = header.get("结果")
-        if res_idx is not None and res_idx < len(cells):
-            if re.match(r"(Pass|Fail|Not tested)", cells[res_idx], re.I):
+        for row in _table(lines, required=("ID",)):
+            if not re.fullmatch(r"T\d+", _cell(row, "ID")):
+                continue
+            total += 1
+            if re.match(r"(Pass|Fail|Not tested)", _cell(row, "结果"), re.I):
                 filled += 1
     return total, filled
 
