@@ -715,10 +715,15 @@ def read_ui_map(run):
         return None
     controls = []
     header = None
+    screen = "（未命名界面）"
     text = path.read_text(encoding="utf-8", errors="replace")
     text = re.sub(r"<!--.*?-->", "", text, flags=re.S)  # ignore template examples
     for raw in text.splitlines():
         line = raw.strip()
+        if line.startswith("## "):
+            screen = line[3:].strip()
+            header = None
+            continue
         if not line.startswith("|"):
             header = None if not line else header
             continue
@@ -737,7 +742,7 @@ def read_ui_map(run):
         covers = cells[cover_idx] if cover_idx is not None and cover_idx < len(cells) else ""
         note = cells[note_idx] if note_idx is not None and note_idx < len(cells) else ""
         task_ids = re.findall(r"T\d+", covers)
-        controls.append({"id": uid, "covers": task_ids, "note": note.strip()})
+        controls.append({"id": uid, "screen": screen, "covers": task_ids, "note": note.strip()})
     return controls
 
 
@@ -752,6 +757,9 @@ def ui_coverage(run):
     skipped = [c for c in controls if not c["covers"] and c["note"]]
     uncovered = [c for c in controls if not c["covers"] and not c["note"]]
     dangling = sorted({t for c in controls for t in c["covers"] if known and t not in known})
+    screens = {}
+    for c in controls:
+        screens.setdefault(c["screen"], []).append(c)
     return {
         "controls": controls,
         "total": len(controls),
@@ -760,6 +768,8 @@ def ui_coverage(run):
         "uncovered": uncovered,
         "dangling": dangling,
         "tasks_known": len(known),
+        "screens": screens,
+        "screen_count": len(screens),
     }
 
 
@@ -770,10 +780,14 @@ def cmd_coverage(a):
         print(f"no {run / 'ui-map.md'} — build the page map first (METHOD Step 1)")
         return 1 if getattr(a, "strict", False) else 0
     print(f"coverage {run}")
+    print(f"  screens    {cov['screen_count']}")
     print(f"  controls   {cov['total']}")
     print(f"  covered    {cov['covered']}")
     print(f"  skipped    {cov['skipped']}  (has a reason in 备注)")
     print(f"  uncovered  {len(cov['uncovered'])}")
+    for name, items in cov["screens"].items():
+        mine = sum(1 for c in items if c["covers"])
+        print(f"  - {name}: {len(items)} controls, {mine} covered")
     if cov["dangling"]:
         print(f"  unknown task ids: {', '.join(cov['dangling'])}")
     for c in cov["uncovered"]:
@@ -879,13 +893,15 @@ def cmd_audit(a):
         checks.append((
             "ui coverage",
             "WARN",
-            f"{cov['total']} controls, {len(cov['uncovered'])} without a task or reason",
+            f"{cov['screen_count']} screens, {cov['total']} controls, "
+            f"{len(cov['uncovered'])} without a task or reason",
         ))
     else:
         checks.append((
             "ui coverage",
             "PASS",
-            f"{cov['total']} controls, {cov['covered']} covered, {cov['skipped']} skipped with reason",
+            f"{cov['screen_count']} screens, {cov['total']} controls, "
+            f"{cov['covered']} covered, {cov['skipped']} skipped with reason",
         ))
 
     print(f"audit {run}")

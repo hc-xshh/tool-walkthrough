@@ -206,8 +206,13 @@ def main():
             rect = c.eval(f"""(() => {{
               const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
               let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
-              if (!hits.length) hits = all.filter(e => (e.innerText || '').includes({want})
-                  && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null);
+              if (!hits.length) {{
+                // substring fallback: shortest label wins, otherwise "文件"
+                // matches "选择文件夹（可选）" and clicks the wrong control
+                hits = all.filter(e => (e.innerText || '').includes({want})
+                    && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null)
+                  .sort((x, y) => (x.innerText || '').length - (y.innerText || '').length);
+              }}
               const el = {pick};
               if (!el) return null;
               el.scrollIntoView({{block:'center'}});
@@ -223,7 +228,8 @@ def main():
                   const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
                   let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
                   if (!hits.length) hits = all.filter(e => (e.innerText || '').includes({want})
-                      && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null);
+                      && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null)
+                    .sort((x, y) => (x.innerText || '').length - (y.innerText || '').length);
                   {pick}.click();
                 }})()""")
             else:

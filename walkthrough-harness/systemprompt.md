@@ -8,7 +8,7 @@
 2. 读 `LongTermMEMORY.md`：只取 `METHOD.md` 里没有的判断，用来调整任务设计。
 3. 跑 preflight：`python3 harness/wt.py --profile <profile> preflight`；有 FAIL 先修环境，不要带病开跑。
 4. 建本轮目录并产出 `runs/<run>/tool-profile.md`：`python3 harness/wt.py new-run <date>-<tool>`；先文档后界面，官方说法一律当待验证断言。
-5. 建页面地图（`runs/<run>/ui-map.md`）：Electron/Web 先跑 `python3 harness/ui-map.py --port <port> --out runs/<run>/ui-map.md --title "<界面名>"` 枚举控件，再人工命名；**每个控件要么挂到某条任务，要么写清不测原因**。`python3 harness/wt.py coverage runs/<run>` 必须为 0 未归属。
+5. 把产品**过一遍**并建页面地图（`runs/<run>/ui-map.md`）：从首屏出发，把菜单、页签、侧栏入口、弹窗逐个点开；每进一屏截首访图、跑 `python3 harness/ui-map.py --port <port> --out runs/<run>/ui-map.md --title "<S编号 界面名>" --nav-from "<上一屏>" --nav-via <控件ID> --nav-to "<本屏>"` 枚举控件（弹层用 `--scope`，如 `.menubar-menu-button.open`）。**每个控件要么挂到某条任务，要么写清不测原因**；`python3 harness/wt.py coverage runs/<run>` 必须为 0 未归属。遍历阶段只记录、不下判断。
 6. 设计任务矩阵（`runs/<run>/task-plan.md`）：从地图派生 **8–15 个任务**，每条写上覆盖的控件 ID；覆盖失败态、产物取回、连续任务，含至少 1 个真实项目上的实景任务。
 7. 逐任务执行并留证据：动作前后成对截图进 `runs/<run>/shots/`，命令与结果进 `runs/<run>/events.jsonl`；实景任务展开「思考 / 工具调用」，正文落 `runs/<run>/trace/task-trace.md`。
 8. 写 `runs/<run>/report.md`：按 `METHOD.md` §6 的七节结构，图放在对应发现下面；定稿前先按 `sub_agents/README.md` 做证据审计。

@@ -4,11 +4,12 @@
 
 ## v5 — 2026-10-22
 
-- **新增 Step 1 页面地图**（流程从 6 步变 7 步）：调研之后先把每个界面的可交互控件列全（`ui-map.md`），再设计任务。每个控件要么挂到某条任务，要么写清不测原因；`wt.py coverage` 与 `audit` 的 `ui coverage` 检查覆盖率。
-- 任务数从 5–8 提到 **8–15**，并要求任务标注覆盖的控件 ID；新增「连续任务」为常规项（状态类 bug 只在第二次出现）。
-- 新增 `harness/ui-map.py`：经 CDP 自动枚举按钮/页签/菜单/输入框/图标按钮（含无 role 的 cursor:pointer 元素），按顶部栏/左侧栏/主区/弹窗分区输出 Markdown 表，人工补命名与归属。
-- `wt.py coverage [--strict]`：解析 `ui-map.md`，列出没有任务也没有原因的控件，并交叉检查任务 ID 是否存在。
-- `new-run` 多复制一份 `templates/ui-map.md`；`templates/task-plan.md` 增加「覆盖控件」列与「未覆盖控件」表。
+- **新增 Step 1「产品遍历与页面地图」**（流程从 6 步变 7 步）：不是截一张首屏，而是把产品**点开一遍**——菜单、页签、二级页、弹窗里的按钮，点开才存在。每进一屏截首访图、枚举控件、记导航边；遍历阶段只记不做判断。
+- 任务数从 5–8 提到 **8–15**，每个界面至少一条任务；任务标注覆盖的控件 ID。
+- `harness/ui-map.py`：CDP 自动枚举按钮/页签/菜单/输入框/图标按钮（含无 role 的 `cursor:pointer` 行），按顶部栏/左侧栏/主区/弹窗分区；多屏追加时 **ID 续号**；`--scope` 把枚举限定在某个弹层内；`--nav-from/--nav-via/--nav-to` 顺手记一条导航边。
+- `wt.py coverage [--strict]`：解析 `ui-map.md`，按界面统计控件与归属，列出既无任务也无原因的控件，交叉检查任务 ID 是否存在；`audit` 的 `ui coverage` 同时报界面数与控件数。
+- 修复 `cdp.py clicktext/clickel` 的包含匹配：改为**最短标签优先**，否则点「文件」会被「选择文件夹（可选）」抢走。
+- `new-run` 多复制一份 `templates/ui-map.md`（含导航表与注释示例）；`templates/task-plan.md` 增加「覆盖控件」列与「未覆盖控件」表。
 
 ## Unreleased
 

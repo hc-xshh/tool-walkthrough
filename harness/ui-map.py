@@ -15,6 +15,7 @@ main / dialog / toolbar / section) so the table reads like the screen.
 import argparse
 import json
 import pathlib
+import re
 import sys
 
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
@@ -72,11 +73,12 @@ PROBE = r"""
     const s = getComputedStyle(el);
     return r.width > 0 && r.height > 0 && s.visibility !== 'hidden' && s.display !== 'none';
   };
-  const SEMANTIC = [...document.querySelectorAll(SEL)];
+  const ROOT = document.querySelector(__SCOPE__) || document;
+  const SEMANTIC = [...ROOT.querySelectorAll(SEL)];
   // Many app shells build clickable rows out of plain divs; cursor:pointer is
   // the only uniform signal. Keep the outermost such element to avoid listing
   // every wrapper, and skip ones inside a real <button>/<a>.
-  const POINTER = [...document.querySelectorAll('*')].filter((el) => {
+  const POINTER = [...ROOT.querySelectorAll('*')].filter((el) => {
     if (getComputedStyle(el).cursor !== 'pointer') return false;
     const anchor = el.closest('button,a[href]');
     if (anchor && anchor !== el) return false;
@@ -122,20 +124,33 @@ def main():
     ap.add_argument("--kind", default="page", choices=["page", "iframe", "any"])
     ap.add_argument("--out", required=True, help="markdown file to write / append to")
     ap.add_argument("--title", default=None, help="section title, e.g. the screen name")
+    ap.add_argument("--nav-from", default=None, help="screen you came from, e.g. 'S1 首屏'")
+    ap.add_argument("--nav-via", default=None, help="control id you clicked, e.g. U02")
+    ap.add_argument("--nav-to", default=None, help="screen this section describes")
+    ap.add_argument("--scope", default="body",
+                    help="CSS selector to limit the crawl to one popup/panel (default: body)")
     ap.add_argument("--include-unclickable", action="store_true",
                     help="also list controls that exist in the DOM but are not visible")
     a = ap.parse_args()
 
     c = cdp.CDP(a.port, a.match, a.kind)
-    items = c.eval(PROBE) or []
+    probe = PROBE.replace("__SCOPE__", json.dumps(a.scope))
+    items = [i for i in (c.eval(probe) or []) if i.get("type") != "presentation"]
     if not a.include_unclickable:
         items = [i for i in items if i.get("visible")]
     if not items:
         sys.exit("no interactive controls found on this target")
 
+    out = pathlib.Path(a.out).expanduser()
+    out.parent.mkdir(parents=True, exist_ok=True)
+    existing = out.read_text(encoding="utf-8") if out.exists() else ""
+    # ids must stay unique across screens; continue after the highest one seen
+    used = [int(m) for m in re.findall(r"^\|\s*U(\d+)\s*\|", existing, flags=re.M)]
+    first = (max(used) + 1) if used else 1
+
     title = a.title or (f"页面：{a.match or 'main'}")
     rows = []
-    for n, it in enumerate(items, start=1):
+    for n, it in enumerate(items, start=first):
         state = "可见" if it.get("visible") else "存在但不可见"
         if it.get("inDialog"):
             state += "（弹窗内）"
@@ -149,8 +164,6 @@ def main():
             )
         )
 
-    out = pathlib.Path(a.out).expanduser()
-    out.parent.mkdir(parents=True, exist_ok=True)
     block = (
         f"\n## {title}\n\n"
         "| ID | 区域 | 控件 | 类型 | 状态 | 覆盖任务 | 备注 |\n"
@@ -158,10 +171,23 @@ def main():
         + "\n".join(rows)
         + "\n"
     )
-    existing = out.read_text(encoding="utf-8") if out.exists() else ""
     if f"## {title}" in existing:
         sys.exit(f"{out} already has a section titled {title!r}; pick another --title")
-    out.write_text(existing + block, encoding="utf-8")
+    existing += block
+
+    if a.nav_from and a.nav_to:
+        edge = f"| {a.nav_from} | {a.nav_via or ''} | {a.nav_to} |  | 由 ui-map.py 记录 |\n"
+        if "## 导航" in existing:
+            existing = existing.rstrip("\n") + "\n" + edge
+        else:
+            existing += (
+                "\n## 导航\n\n"
+                "| 从 | 控件 | 到 | 返回方式 | 备注 |\n"
+                "|---|---|---|---|---|\n"
+                + edge
+            )
+
+    out.write_text(existing, encoding="utf-8")
     print(f"{len(rows)} controls -> {out}", file=sys.stderr)
     print(json.dumps({"controls": len(rows), "out": str(out)}, ensure_ascii=False))
 
