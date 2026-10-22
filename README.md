@@ -133,6 +133,14 @@ python3 harness/wt.py --profile linux-desktop preflight
 
 profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选（Linux 默认 `linux-desktop`，Xvfb 用 `linux-x11`）。
 
+检查项自己有回归测试（标准库 unittest，无需安装）：
+
+```bash
+python3 -m unittest discover -s tests -v     # 41 个用例，覆盖 coverage / audit / CLI
+```
+
+用例在临时目录里造"假 run"，只改一处再断言工具的反应；改判据时先跑一遍，别让"拦住偷懒"的检查在重构里悄悄失效（`tests/README.md`）。
+
 **真实桌面优先**：全量走查默认在现有 GNOME 会话跑。`linux-desktop` 用 `DISPLAY=:0` + Xwayland auth，保留 GPU、原生文件选择器、通知、桌面宠物和电脑操控。`linux-x11` 与 `ci` 才设 `LIBGL_ALWAYS_SOFTWARE=1` 走软件渲染（由 profile 的 `software_gl` 字段决定），只用于 CI / 无人值守冒烟；真实桌面上不要加 `--disable-gpu`，否则动画和滚动会变慢，观感结论会失真。
 
 **版本锚定**：`harness/harness.lock` 记录 `wt_version`、最低 Python / tesseract 版本和已实测平台；`preflight` 会对照它给出 WARN。报告附录建议带上 `harness.json` 的版本信息。

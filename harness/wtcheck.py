@@ -58,14 +58,17 @@ def _cell(row, key):
 
 
 def read_ui_map(run):
-    """Parse ui-map.md: rows with a U-id, their covered task ids and notes."""
+    """Parse ui-map.md: rows with a U-id, their covered task ids and notes.
+
+    Every section with a control table counts as a screen — a title without an
+    S-number is reported by crawl_issues instead of being silently dropped, so
+    a typo ('## 首屏') cannot make a screen disappear from the census.
+    """
     path = run / "ui-map.md"
     if not path.exists():
         return None
     controls = []
     for title, lines in _sections(_read_stripped(path)):
-        if not title.startswith("S"):
-            continue
         for row in _table(lines, required=("ID",)):
             uid = _cell(row, "ID")
             if not re.fullmatch(r"U\d+", uid):
