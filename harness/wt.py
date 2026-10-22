@@ -625,6 +625,9 @@ def cmd_launch(a):
     cmd = list(a.command)
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
+    if not cmd and OS != "Darwin":
+        # --app only means "open -a <app>", which exists on macOS alone
+        raise SystemExit(f"launch needs a command on {OS} (--app is macOS-only)")
     if OS == "Linux":
         base = Path(os.environ.get("WALKTHROUGH_BASE", "/tmp/walkthrough"))
         home = Path(os.environ.get("WALKTHROUGH_HOME", base / "home"))

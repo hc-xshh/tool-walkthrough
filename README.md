@@ -59,7 +59,8 @@ python3 harness/wt.py --run runs/<run> launch --app "<AppName>" --log runs/<run>
 # 3. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
 python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
 python3 harness/wt.py --run runs/<run> ocr runs/<run>/shots/01.png
-python3 harness/wt.py --run runs/<run> click 300 241
+#    OCR 给的是截图内的像素坐标；多屏负原点或 Retina 缩放下用 --shot 换算
+python3 harness/wt.py --run runs/<run> click 300 241 --shot runs/<run>/shots/01.png
 
 # 4. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
 #    启动时加 --remote-debugging-port=9339
