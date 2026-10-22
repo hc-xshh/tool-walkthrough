@@ -11,6 +11,7 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py --run runs/2026-10-19-tool launch --log app.log -- /path/to/app
   python3 harness/wt.py report runs/2026-10-19-tool
   python3 harness/wt.py audit --strict runs/2026-10-19-tool
+  python3 harness/wt.py coverage runs/2026-10-19-tool
 
 Linux uses X11 tooling (ffmpeg/xdotool). macOS uses screencapture and
 cliclick (or AppleScript). Windows uses PowerShell/.NET and ctypes.
@@ -22,9 +23,7 @@ coordinates inside the image, so pass `click --shot <png>` to land the click
 where the word actually is: multi-monitor Windows and Retina macOS otherwise
 click the wrong spot.
 
-Every command with --run (or WALKTHROUGH_RUN) appends one line to
-runs/<run>/events.jsonl: timestamp, action, target, result, duration and
-evidence path. `audit` cross-checks that log against report.md and shots/.
+Checks live in wtcheck.py, capture in wtshot.py, shared plumbing in wtlib.py.
 """
 from __future__ import annotations
 
@@ -32,7 +31,6 @@ import argparse
 import json
 import os
 import platform
-import re
 import shutil
 import subprocess
 import sys
@@ -41,311 +39,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent
-OS = platform.system()  # Linux / Darwin / Windows
-WT_VERSION = "1.3.0"
-PROFILES_DIR = ROOT / "harness" / "profiles"
-LOCK_FILE = ROOT / "harness" / "harness.lock"
-
-
-def which_any(names):
-    for n in names:
-        p = shutil.which(n)
-        if p:
-            return p
-    return None
-
-
-def enable_dpi_awareness():
-    """Make this process DPI-aware so screenshot pixels and click coords agree.
-
-    Windows only. A non-aware process gets its coordinates virtualised by the
-    shell, so a click lands off-target on any display scaled above 100%.
-    """
-    if OS != "Windows":
-        return None
-    import ctypes
-
-    try:
-        user32 = ctypes.WinDLL("user32", use_last_error=True)
-        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
-        user32.SetProcessDpiAwarenessContext.restype = ctypes.c_bool
-        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(-4)):  # per-monitor v2
-            return "per-monitor-v2"
-    except Exception:
-        pass
-    try:
-        shcore = ctypes.WinDLL("shcore")
-        shcore.SetProcessDpiAwareness.argtypes = [ctypes.c_int]
-        shcore.SetProcessDpiAwareness.restype = ctypes.c_int
-        if shcore.SetProcessDpiAwareness(2) == 0:  # per-monitor
-            return "per-monitor"
-    except Exception:
-        pass
-    try:
-        if ctypes.windll.user32.SetProcessDPIAware():
-            return "system"
-    except Exception:
-        pass
-    return None
-
-
-def _x11_size(display):
-    """Screen size in pixels, straight from the X server."""
-    p = which_any(["xdpyinfo"])
-    if not p:
-        return (0, 0)
-    try:
-        out = subprocess.run([p, "-display", display], capture_output=True, text=True, timeout=15)
-        m = re.search(r"dimensions:\s+(\d+)x(\d+)", out.stdout or "")
-        return (int(m.group(1)), int(m.group(2))) if m else (0, 0)
-    except Exception:
-        return (0, 0)
-
-
-def _png_size(png):
-    """Read width/height out of a PNG header without extra dependencies."""
-    try:
-        with open(png, "rb") as fh:
-            head = fh.read(24)
-        if head[:8] != b"\x89PNG\r\n\x1a\n":
-            return (0, 0)
-        return (int.from_bytes(head[16:20], "big"), int.from_bytes(head[20:24], "big"))
-    except Exception:
-        return (0, 0)
-
-
-def _macos_logical_size():
-    """Desktop size in points (Finder reports the same units clicks use)."""
-    try:
-        p = subprocess.run(
-            ["osascript", "-e", 'tell application "Finder" to get bounds of window of desktop'],
-            capture_output=True, text=True, timeout=15,
-        )
-        nums = [int(x) for x in re.findall(r"-?\d+", p.stdout or "")]
-        if len(nums) >= 4:
-            return (nums[2] - nums[0], nums[3] - nums[1])
-    except Exception:
-        pass
-    return (0, 0)
-
-
-def desktop_metrics(png=None):
-    """Map screenshot pixels onto click coordinates.
-
-    `origin` is where pixel (0,0) of the capture sits in the coordinate space
-    the click API uses; `scale` is capture pixels per click unit. Windows grabs
-    the whole virtual desktop (negative origins with a left-hand secondary
-    monitor); macOS captures physical pixels while clicks use points (Retina).
-    """
-    if OS == "Windows":
-        enable_dpi_awareness()
-        import ctypes
-
-        g = ctypes.windll.user32.GetSystemMetrics
-        return {
-            "origin_x": g(76), "origin_y": g(77),  # SM_XVIRTUALSCREEN / SM_YVIRTUALSCREEN
-            "width": g(78), "height": g(79),
-            "scale": 1.0,
-            "source": "GetSystemMetrics(virtual screen)",
-        }
-    if OS == "Darwin":
-        lw, lh = _macos_logical_size()
-        pw, ph = _png_size(png) if png else (0, 0)
-        scale = round(pw / lw, 3) if lw and pw else 1.0
-        return {
-            "origin_x": 0, "origin_y": 0,
-            "width": pw or lw, "height": ph or lh,
-            "scale": scale,
-            "source": "screencapture + Finder bounds",
-        }
-    w, h = _png_size(png) if png else (0, 0)
-    return {"origin_x": 0, "origin_y": 0, "width": w, "height": h, "scale": 1.0, "source": "x11"}
-
-
-def shot_meta_path(png):
-    return Path(str(png) + ".json")
-
-
-def read_shot_meta(png):
-    path = shot_meta_path(png)
-    if not path.exists():
-        return None
-    try:
-        # utf-8-sig: hand-edited sidecars (e.g. PowerShell) often carry a BOM
-        return json.loads(path.read_text(encoding="utf-8-sig"))
-    except Exception:
-        return None
-
-
-def find_chrome():
-    env = os.environ.get("WALKTHROUGH_CHROME")
-    if env and Path(env).exists():
-        return env
-    if OS == "Darwin":
-        for p in (
-            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
-            "/Applications/Chromium.app/Contents/MacOS/Chromium",
-            "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
-        ):
-            if Path(p).exists():
-                return p
-    if OS == "Windows":
-        bases = [
-            os.environ.get("ProgramFiles"),
-            os.environ.get("ProgramFiles(x86)"),
-            os.environ.get("LocalAppData"),
-        ]
-        rels = [
-            r"Google\Chrome\Application\chrome.exe",
-            r"Chromium\Application\chrome.exe",
-            r"Microsoft\Edge\Application\msedge.exe",
-        ]
-        for base in filter(None, bases):
-            for rel in rels:
-                p = Path(base) / rel
-                if p.exists():
-                    return str(p)
-    return which_any(["google-chrome", "chromium", "chromium-browser", "chrome", "msedge"])
-
-
-def load_profile(name):
-    if not name or name == "auto":
-        name = {"Linux": "linux-desktop", "Darwin": "macos", "Windows": "windows"}.get(OS, "linux-desktop")
-    path = PROFILES_DIR / f"{name}.json"
-    if not path.exists():
-        raise SystemExit(f"unknown profile: {name} (looked in {PROFILES_DIR})")
-    data = json.loads(path.read_text(encoding="utf-8"))
-    data["_name"] = name
-    return data
-
-
-def profile(a):
-    if not hasattr(a, "_profile"):
-        a._profile = load_profile(getattr(a, "profile", None))
-    return a._profile
-
-
-def version_tuple(text):
-    m = re.search(r"(\d+)(?:\.(\d+))?(?:\.(\d+))?", str(text))
-    if not m:
-        return ()
-    return tuple(int(x) for x in m.groups() if x is not None)
-
-
-def tesseract_version():
-    p = which_any(["tesseract"])
-    if not p:
-        return None
-    try:
-        out = subprocess.run([p, "--version"], capture_output=True, text=True, timeout=5)
-        return version_tuple(out.stdout or out.stderr)
-    except Exception:
-        return None
-
-
-def tesseract_langs():
-    """Installed language packs, e.g. ['chi_sim', 'eng', 'osd']."""
-    p = which_any(["tesseract"])
-    if not p:
-        return []
-    try:
-        out = subprocess.run([p, "--list-langs"], capture_output=True, text=True, timeout=10)
-        lines = (out.stdout or "").splitlines()[1:]  # first line is the banner
-        return [ln.strip() for ln in lines if re.fullmatch(r"[a-z0-9_]+", ln.strip() or "")]
-    except Exception:
-        return []
-
-
-def module_available(name):
-    try:
-        __import__(name)
-        return True
-    except Exception:
-        return False
-
-
-def load_lock():
-    if LOCK_FILE.exists():
-        try:
-            return json.loads(LOCK_FILE.read_text(encoding="utf-8"))
-        except Exception:
-            return {}
-    return {}
-
-
-def resolve_run(a):
-    if getattr(a, "run", None):
-        return Path(a.run).expanduser().resolve()
-    if getattr(a, "cmd", None) == "new-run":
-        return (ROOT / "runs" / a.name).resolve()
-    if getattr(a, "cmd", None) in ("report", "audit"):
-        return Path(a.run_dir).expanduser().resolve()
-    env = os.environ.get("WALKTHROUGH_RUN")
-    return Path(env).expanduser().resolve() if env else None
-
-
-def log_event(run, **fields):
-    if not run:
-        return
-    run.mkdir(parents=True, exist_ok=True)
-    rec = {
-        "ts": datetime.now().astimezone().isoformat(timespec="seconds"),
-        "os": OS,
-        **fields,
-    }
-    with open(run / "events.jsonl", "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-
-def read_events(run):
-    events = []
-    path = run / "events.jsonl"
-    if not path.exists():
-        return events
-    # utf-8-sig: a BOM would make the first line unparsable and silently drop
-    # every event, which is exactly the kind of false PASS audit exists to stop
-    for line in path.read_text(encoding="utf-8-sig", errors="replace").splitlines():
-        try:
-            events.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
-    return events
-
-
-def write_harness_json(run, prof):
-    path = run / "harness.json"
-    lock = load_lock()
-    data = {
-        "schema": 1,
-        "wt_version": WT_VERSION,
-        "profile": prof.get("_name"),
-        "os": platform.platform(),
-        "python": platform.python_version(),
-        "tesseract": ".".join(map(str, tesseract_version() or ())) or "not found",
-        "chrome": find_chrome() or "not found",
-        "lock": lock,
-        "created": datetime.now().astimezone().isoformat(timespec="seconds"),
-    }
-    if path.exists():
-        # Keep hand-edited extras (e.g. "raters") and the original timestamp,
-        # but refresh the machine facts: re-running new-run with another
-        # --profile must not leave a stale profile behind.
-        try:
-            old = json.loads(path.read_text(encoding="utf-8-sig"))
-        except Exception:
-            old = {}
-        if isinstance(old, dict):
-            data["created"] = old.get("created", data["created"])
-            for key, value in old.items():
-                data.setdefault(key, value)
-    path.write_text(json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-
-def say(name, ok, detail, warn_only=False):
-    status = "PASS" if ok else ("WARN" if warn_only else "FAIL")
-    print(f"{name:<24} {status:<5} {detail}")
-    return 0 if ok or warn_only else 1
+from wtlib import *  # noqa: F401,F403  (ROOT, OS, WT_VERSION, helpers)
+from wtlib import profile, resolve_run, log_event
+import wtshot
+from wtshot import desktop_metrics, enable_dpi_awareness, read_shot_meta, shot_meta_path
+from wtcheck import cmd_audit, cmd_coverage
 
 
 def cmd_preflight(a):
@@ -423,6 +121,8 @@ def cmd_preflight(a):
     return 1 if rc else 0
 
 
+
+
 def cmd_profiles(a):
     rows = []
     for p in sorted(PROFILES_DIR.glob("*.json")):
@@ -431,6 +131,8 @@ def cmd_profiles(a):
     for name, os_name, isolation in rows:
         print(f"{name:<14} {os_name:<8} {isolation}")
     return {"target": "profiles", "detail": f"{len(rows)} profiles"}
+
+
 
 
 def cmd_new_run(a):
@@ -465,15 +167,6 @@ def cmd_new_run(a):
     return {"target": str(run), "detail": f"{len(copied)} templates + trace log"}
 
 
-class _ShotArgs:
-    """Minimal namespace so click can reuse cmd_shot's capture path."""
-
-    display = None
-    geometry = None
-    profile = None
-
-    def __init__(self, out):
-        self.out = str(out)
 
 
 def cmd_shot(a):
@@ -483,63 +176,7 @@ def cmd_shot(a):
     disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
     geom = a.geometry or prof.get("geometry") or ""
 
-    if OS == "Linux":
-        if not geom or geom == "screen":
-            w, h = _x11_size(disp)
-            geom = f"{w}x{h}" if w and h else "1440x900"
-        subprocess.run(
-            [
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "x11grab", "-video_size", geom, "-i", disp,
-                "-frames:v", "1", "-y", str(out),
-            ],
-            check=True, env=dict(os.environ, DISPLAY=disp),
-        )
-    elif OS == "Darwin":
-        subprocess.run(["screencapture", "-x", "-o", str(out)], check=True)
-    elif OS == "Windows":
-        ps = r'''
-Add-Type -AssemblyName System.Windows.Forms
-Add-Type -AssemblyName System.Drawing
-# Be DPI-aware before measuring, otherwise SystemInformation reports a
-# virtualised (logical) size while CopyFromScreen grabs physical pixels.
-$sig = @"
-using System;
-using System.Runtime.InteropServices;
-public class WtDpi {
-  [DllImport("user32.dll")] public static extern bool SetProcessDpiAwarenessContext(IntPtr v);
-  [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
-}
-"@
-try { Add-Type -TypeDefinition $sig -ErrorAction Stop } catch {}
-try { [WtDpi]::SetProcessDpiAwarenessContext([IntPtr](-4)) | Out-Null }
-catch { try { [WtDpi]::SetProcessDPIAware() | Out-Null } catch {} }
-$vs = [System.Windows.Forms.SystemInformation]::VirtualScreen
-$bmp = New-Object System.Drawing.Bitmap $vs.Width, $vs.Height
-$g = [System.Drawing.Graphics]::FromImage($bmp)
-$g.CopyFromScreen($vs.Left, $vs.Top, 0, 0, $bmp.Size)
-$bmp.Save($env:WT_OUT, [System.Drawing.Imaging.ImageFormat]::Png)
-$g.Dispose(); $bmp.Dispose()
-'''
-        with tempfile.NamedTemporaryFile("w", suffix=".ps1", delete=False, encoding="utf-8") as f:
-            f.write(ps)
-            script = f.name
-        try:
-            subprocess.run(
-                ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", script],
-                check=True, env=dict(os.environ, WT_OUT=str(out)),
-            )
-        finally:
-            os.unlink(script)
-    else:
-        raise SystemExit(f"unsupported OS: {OS}")
-
-    meta = desktop_metrics(out)
-    pw, ph = _png_size(out)
-    meta["width"] = meta.get("width") or pw
-    meta["height"] = meta.get("height") or ph
-    meta["screenshot"] = str(out)
-    shot_meta_path(out).write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
+    meta = wtshot.capture_screen(out, disp, geom)
     print(out)
     print(
         f"shot origin={meta['origin_x']},{meta['origin_y']} "
@@ -553,6 +190,19 @@ $g.Dispose(); $bmp.Dispose()
         "scale": meta["scale"],
         "detail": f"{meta['width']}x{meta['height']}",
     }
+
+
+class _ShotArgs:
+    """Minimal namespace so click can reuse cmd_shot's capture path."""
+
+    display = None
+    geometry = None
+    profile = None
+
+    def __init__(self, out):
+        self.out = str(out)
+
+
 
 
 def cmd_click(a):
@@ -616,6 +266,8 @@ def cmd_click(a):
     return rec
 
 
+
+
 def cmd_ocr(a):
     prof = profile(a)
     tess = which_any(["tesseract"])
@@ -644,6 +296,8 @@ def cmd_ocr(a):
         count += 1
         print(f"{cols[11]}\tx={cols[6]} y={cols[7]} w={cols[8]} h={cols[9]}\tconf={cols[10]}")
     return {"target": str(img), "detail": f"{count} words"}
+
+
 
 
 def cmd_launch(a):
@@ -696,6 +350,8 @@ def cmd_launch(a):
     return {"target": " ".join(cmd), "detail": f"pid={p.pid} log={log}"}
 
 
+
+
 def cmd_report(a):
     script = ROOT / "harness" / "build-report.py"
     cmd = [sys.executable, str(script), a.run_dir, "--out", a.out]
@@ -711,452 +367,6 @@ def cmd_report(a):
     return {"target": str(Path(a.run_dir).expanduser().resolve())}
 
 
-def read_ui_map(run):
-    """Parse ui-map.md: rows with a U-id, their covered task ids and notes."""
-    path = run / "ui-map.md"
-    if not path.exists():
-        return None
-    controls = []
-    header = None
-    screen = "（未命名界面）"
-    text = path.read_text(encoding="utf-8", errors="replace")
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.S)  # ignore template examples
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            screen = line[3:].strip()
-            header = None
-            continue
-        if not line.startswith("|"):
-            header = None if not line else header
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            if any(c.upper() == "ID" for c in cells):
-                header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue  # separator row
-        uid = cells[header.get("ID", 0)] if cells else ""
-        if not re.fullmatch(r"U\d+", uid):
-            continue
-        cover_idx = header.get("覆盖任务")
-        note_idx = header.get("备注")
-        state_idx = header.get("状态")
-        region_idx = header.get("区域")
-        type_idx = header.get("类型")
-        covers = cells[cover_idx] if cover_idx is not None and cover_idx < len(cells) else ""
-        note = cells[note_idx] if note_idx is not None and note_idx < len(cells) else ""
-        state = cells[state_idx] if state_idx is not None and state_idx < len(cells) else ""
-        region = cells[region_idx] if region_idx is not None and region_idx < len(cells) else ""
-        kind = cells[type_idx] if type_idx is not None and type_idx < len(cells) else ""
-        task_ids = re.findall(r"T\d+", covers)
-        controls.append({
-            "id": uid, "screen": screen, "covers": task_ids,
-            "note": note.strip(), "state": state, "region": region.strip(), "type": kind.strip(),
-        })
-    return controls
-
-
-def read_nav_edges(run):
-    """Rows of the '## 导航' table as {'from', 'control', 'to'} dicts."""
-    path = run / "ui-map.md"
-    if not path.exists():
-        return []
-    text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
-    in_nav, header = False, None
-    edges = []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            in_nav = line[3:].strip().startswith("导航")
-            header = None
-            continue
-        if not in_nav or not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue
-        idx = {k: header.get(k) for k in ("从", "控件", "到")}
-        vals = {k: (cells[i] if i is not None and i < len(cells) else "") for k, i in idx.items()}
-        if not vals["从"] and not vals["到"]:
-            continue
-        edges.append({"from": vals["从"], "control": vals["控件"], "to": vals["到"]})
-    return edges
-
-
-ENTRY_REGIONS = ("左侧栏", "导航栏", "底部栏")
-MENU_TYPES = ("menu", "menubar", "下拉", "菜单")
-NO_NEW_SCREEN = ("不产生新屏", "不新开屏", "同屏", "切换本屏", "留在本屏", "就地", "不测")
-
-
-def crawl_issues(run, cov):
-    """Reasons to believe the product was not actually crawled through.
-
-    `coverage` alone only proves every *listed* control has a home; a lazy run
-    can list five controls from one screen and pass. These checks look at the
-    crawl itself: one first-visit screenshot per screen, one task per screen,
-    and a nav edge for every screen after the first.
-    """
-    issues = []
-    shots = sorted(p.name for p in (run / "screens").glob("*.png")) if (run / "screens").is_dir() else []
-    edges = read_nav_edges(run)
-
-    for name, items in cov["screens"].items():
-        sid = re.match(r"\s*(S\d+)", name)
-        sid = sid.group(1) if sid else None
-        if not sid:
-            issues.append(f"section {name!r} has no S-number (write '## S2 名称')")
-            continue
-        if not any(s.startswith(sid) for s in shots):
-            issues.append(f"{sid} has no first-visit screenshot (screens/{sid}-*.png)")
-        if not any(c["covers"] for c in items):
-            issues.append(f"{name}: no task covers this screen")
-
-    if cov["screen_count"] > 1:
-        need = cov["screen_count"] - 1
-        if len(edges) < need:
-            issues.append(f"navigation table has {len(edges)} edge(s), need at least {need} for {cov['screen_count']} screens")
-
-    known = set(cov["screens"])
-    for e in edges:
-        if e["to"] and e["to"] not in known:
-            issues.append(f"nav edge points at {e['to']!r}, which has no section in ui-map.md")
-
-    # first-level entries are the ones reachable from the entry screen only;
-    # later screens re-render the same rail and would double-count it
-    for c in cov["controls"]:
-        if not re.match(r"S1\b", c["screen"]):
-            continue
-        is_entry = c["region"] in ENTRY_REGIONS or (
-            c["region"] in ("顶部栏", "顶栏") and c["type"].lower() in MENU_TYPES
-        )
-        if not is_entry:
-            continue
-        if any(e["control"] == c["id"] for e in edges):
-            continue
-        if any(word in c["note"] for word in NO_NEW_SCREEN):
-            continue
-        issues.append(
-            f"first-level entry {c['id']} ({c['region']} {c['type']}) has no screen behind it and no reason"
-        )
-    return issues
-
-
-def read_state_matrix(run):
-    """Rows of the '## 状态矩阵' table: {'screen','state','how','reached','note'}."""
-    path = run / "ui-map.md"
-    if not path.exists():
-        return None
-    text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
-    in_block, header, rows = False, None, []
-    for raw in text.splitlines():
-        line = raw.strip()
-        if line.startswith("## "):
-            in_block = line[3:].strip().startswith("状态")
-            header = None
-            continue
-        if not in_block or not line.startswith("|"):
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue
-
-        def cell(key):
-            i = header.get(key)
-            return cells[i] if i is not None and i < len(cells) else ""
-
-        if not cell("屏幕"):
-            continue
-        rows.append({
-            "screen": cell("屏幕"), "state": cell("状态"),
-            "how": cell("怎么触发"), "reached": cell("本轮到没到"),
-            "note": cell("覆盖任务或原因"),
-        })
-    return rows
-
-
-def state_issues(run, cov):
-    rows = read_state_matrix(run)
-    if rows is None:
-        return ["no state matrix — a crawl only covers screens at rest, states need their own ledger"]
-    issues = []
-    if not rows:
-        issues.append("state matrix has no rows")
-    by_screen = {}
-    for r in rows:
-        sid = re.match(r"\s*(S\d+)", r["screen"])
-        if sid:
-            by_screen.setdefault(sid.group(1), []).append(r)
-    for name in cov["screens"]:
-        sid = re.match(r"\s*(S\d+)", name)
-        if sid and sid.group(1) not in by_screen:
-            issues.append(f"{sid.group(1)} has no state rows")
-    for r in rows:
-        if "没到" in r["reached"] and not r["note"].strip():
-            issues.append(f"state '{r['state']}' on {r['screen']} is marked 没到 without a reason")
-    return issues
-
-
-def ui_coverage(run):
-    """(total, covered, skipped-with-reason, uncovered, dangling task refs)."""
-    controls = read_ui_map(run)
-    if controls is None:
-        return None
-    plan = run / "task-plan.md"
-    known = set(re.findall(r"T\d+", plan.read_text(encoding="utf-8", errors="replace"))) if plan.exists() else set()
-    covered = [c for c in controls if c["covers"]]
-    skipped = [c for c in controls if not c["covers"] and c["note"]]
-    uncovered = [c for c in controls if not c["covers"] and not c["note"]]
-    dangling = sorted({t for c in controls for t in c["covers"] if known and t not in known})
-    screens = {}
-    for c in controls:
-        screens.setdefault(c["screen"], []).append(c)
-    return {
-        "controls": controls,
-        "total": len(controls),
-        "covered": len(covered),
-        "skipped": len(skipped),
-        "uncovered": uncovered,
-        "dangling": dangling,
-        "tasks_known": len(known),
-        "screens": screens,
-        "screen_count": len(screens),
-    }
-
-
-def cmd_coverage(a):
-    run = Path(a.run_dir).expanduser().resolve()
-    cov = ui_coverage(run)
-    if cov is None:
-        print(f"no {run / 'ui-map.md'} — build the page map first (METHOD Step 1)")
-        return 1 if getattr(a, "strict", False) else 0
-    print(f"coverage {run}")
-    print(f"  screens    {cov['screen_count']}")
-    print(f"  controls   {cov['total']}")
-    print(f"  covered    {cov['covered']}")
-    print(f"  skipped    {cov['skipped']}  (has a reason in 备注)")
-    print(f"  uncovered  {len(cov['uncovered'])}")
-    for name, items in cov["screens"].items():
-        mine = sum(1 for c in items if c["covers"])
-        print(f"  - {name}: {len(items)} controls, {mine} covered")
-    if cov["dangling"]:
-        print(f"  unknown task ids: {', '.join(cov['dangling'])}")
-    for c in cov["uncovered"]:
-        print(f"  - {c['id']} has no task and no reason")
-
-    issues = crawl_issues(run, cov) + state_issues(run, cov)
-    if issues:
-        print("\ncrawl looks incomplete:")
-        for i in issues:
-            print(f"  ! {i}")
-    if getattr(a, "strict", False) and (cov["uncovered"] or cov["dangling"] or issues):
-        return 1
-    return 0
-
-
-def count_planned_tasks(plan_path):
-    """Task rows that carry a result — template examples have none."""
-    if not plan_path.exists():
-        return 0, 0
-    header = None
-    total, filled = 0, 0
-    for raw in plan_path.read_text(encoding="utf-8", errors="replace").splitlines():
-        line = raw.strip()
-        if not line.startswith("|"):
-            header = None if not line else header
-            continue
-        cells = [c.strip() for c in line.strip("|").split("|")]
-        if header is None:
-            if any(c.upper() == "ID" for c in cells):
-                header = {c: i for i, c in enumerate(cells)}
-            continue
-        if all(set(c) <= set("-: ") for c in cells):
-            continue
-        idx = header.get("ID")
-        if idx is None or idx >= len(cells) or not re.fullmatch(r"T\d+", cells[idx]):
-            continue
-        total += 1
-        res_idx = header.get("结果")
-        if res_idx is not None and res_idx < len(cells):
-            if re.match(r"(Pass|Fail|Not tested)", cells[res_idx], re.I):
-                filled += 1
-    return total, filled
-
-
-def finding_issue_list(text):
-    """Findings must state 归因 (product/script/env) and 复现 count.
-
-    Reports title findings either as `### 4.1 · S2 · ...` or `#### W-01 ...`,
-    so count finding-like headings and compare with the two fields.
-    """
-    titles = re.findall(r"^#{3,4}\s+(.+)$", text, flags=re.M)
-    findings = [t for t in titles if re.search(r"·\s*S[1-4]\b|^\s*W-\d+", t)]
-    n = len(findings)
-    if not n:
-        return []
-    missing = []
-    got_attr = len(re.findall(r"\*\*归因\*\*", text))
-    got_repro = len(re.findall(r"\*\*复现\*\*", text))
-    if got_attr < n:
-        missing.append(f"{n - got_attr} of {n} findings lack 归因")
-    if got_repro < n:
-        missing.append(f"{n - got_repro} of {n} findings lack 复现")
-    return missing
-
-
-def cmd_audit(a):
-    run = Path(a.run_dir).expanduser().resolve()
-    events = read_events(run)
-    checks = []
-
-    report = run / "report.md"
-    report_ok = report.exists() and report.stat().st_size > 0
-    checks.append(("report.md", "PASS" if report_ok else "FAIL", str(report)))
-
-    text = report.read_text(encoding="utf-8", errors="replace") if report_ok else ""
-    refs = re.findall(r"(?:shots|screens)/[^\s)`\"']+\.(?:png|jpg|jpeg)", text)
-    missing_refs = [r for r in refs if not (run / r).exists()]
-    checks.append((
-        "report image refs",
-        "PASS" if refs and not missing_refs else ("FAIL" if missing_refs else "WARN"),
-        f"{len(refs)} refs, {len(missing_refs)} missing",
-    ))
-
-    SHOT_ACTIONS = {"shot", "cdp:shot", "shot-window"}
-    CLICK_ACTIONS = {"click", "cdp:click", "cdp:clicktext", "cdp:clickel", "cdp:clickxy"}
-
-    shot_events = [e for e in events if e.get("action") in SHOT_ACTIONS and e.get("result") != "error"]
-    # clicks and other actions can carry a screenshot too (`click` captures by
-    # default); those are evidence as well and must point at real files
-    carried = [
-        e for e in events
-        if str(e.get("screenshot") or "").strip() and e.get("result") != "error"
-    ]
-    bad_shots = []
-    for e in carried:
-        p = Path(str(e["screenshot"]))
-        if not p.is_absolute():
-            candidates = [run / p, run.parent / p, Path.cwd() / p]
-            p = next((c for c in candidates if c.exists()), p)
-        if not p.exists():
-            bad_shots.append(str(p))
-    unattributed = sum(1 for e in shot_events if not str(e.get("screenshot") or "").strip())
-    screens_dir = run / "screens"
-    crawl_shots = sorted(screens_dir.glob("*.png")) if screens_dir.is_dir() else []
-    if not shot_events and not carried and not crawl_shots:
-        shot_status = "FAIL"
-    elif bad_shots:
-        shot_status = "FAIL"
-    elif unattributed:
-        shot_status = "WARN"
-    else:
-        shot_status = "PASS"
-    checks.append((
-        "shot files",
-        shot_status,
-        f"{len(shot_events)} shots, {len(carried)} screenshots, "
-        f"{len(crawl_shots)} crawl screens, {len(bad_shots)} missing, {unattributed} without a path",
-    ))
-
-    errors = [e for e in events if e.get("result") == "error"]
-    checks.append((
-        "error events",
-        "PASS" if not errors else "WARN",
-        f"{len(errors)} (last: {errors[-1].get('action') if errors else '-'})",
-    ))
-
-    def evidence_ok(ev):
-        raw = str(ev.get("screenshot") or "").strip()
-        if not raw:
-            return False
-        p = Path(raw)
-        if not p.is_absolute():
-            p = next((c for c in (run / p, run.parent / p, Path.cwd() / p) if c.exists()), p)
-        return p.exists()
-
-    gaps = 0
-    for i, e in enumerate(events):
-        if e.get("action") in CLICK_ACTIONS:
-            # `wt.py click` / `cdp.py --capture` now shoot at click time, so a
-            # click carrying a real screenshot is already paired.
-            if evidence_ok(e):
-                continue
-            if any(x.get("action") in SHOT_ACTIONS or evidence_ok(x) for x in events[i + 1:i + 6]):
-                continue
-            gaps += 1
-    checks.append((
-        "click -> shot",
-        "PASS" if gaps == 0 else "WARN",
-        f"{gaps} clicks without a later shot",
-    ))
-
-    harness = run / "harness.json"
-    checks.append(("harness.json", "PASS" if harness.exists() else "WARN", str(harness)))
-
-    plan = run / "task-plan.md"
-    if plan.exists():
-        total_tasks, filled = count_planned_tasks(plan)
-        checks.append((
-            "task count",
-            "PASS" if 8 <= filled <= 15 else "WARN",
-            f"{filled} tasks with a result, {total_tasks} rows (METHOD Step 3 wants 8-15)",
-        ))
-
-    cov = ui_coverage(run)
-    if cov is None:
-        checks.append(("ui coverage", "WARN", f"no {run.name}/ui-map.md (METHOD Step 1)"))
-    elif not cov["total"]:
-        checks.append(("ui coverage", "WARN", "ui-map.md has no control rows yet"))
-    elif cov["uncovered"]:
-        checks.append((
-            "ui coverage",
-            "WARN",
-            f"{cov['screen_count']} screens, {cov['total']} controls, "
-            f"{len(cov['uncovered'])} without a task or reason",
-        ))
-    else:
-        issues = crawl_issues(run, cov) + state_issues(run, cov)
-        checks.append((
-            "ui coverage",
-            "PASS" if not issues else "WARN",
-            f"{cov['screen_count']} screens, {cov['total']} controls, "
-            f"{cov['covered']} covered, {cov['skipped']} skipped with reason"
-            + (f"; crawl: {issues[0]}" if issues else ""),
-        ))
-
-    if report_ok:
-        missing_fields = finding_issue_list(text)
-        checks.append((
-            "finding attribution",
-            "PASS" if not missing_fields else "WARN",
-            "every finding states 归因/复现"
-            if not missing_fields
-            else f"{len(missing_fields)} missing: {missing_fields[0]}",
-        ))
-
-    print(f"audit {run}")
-    print(f"{'check':<24} {'status':<6} detail")
-    fails = warns = 0
-    for name, status, detail in checks:
-        print(f"{name:<24} {status:<6} {detail}")
-        fails += status == "FAIL"
-        warns += status == "WARN"
-
-    if events:
-        print("\nlast events:")
-        for e in events[-5:]:
-            print(f"  {e.get('ts','')} {e.get('action',''):<8} {e.get('result',''):<5} {e.get('target','')}")
-
-    if fails or (getattr(a, "strict", False) and warns):
-        return 1
-    return 0
 
 
 def main():

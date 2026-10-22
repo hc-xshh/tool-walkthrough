@@ -1,6 +1,6 @@
 {
   "schema": 1,
-  "wt_version": "1.3.0",
+  "wt_version": "1.4.0",
   "python_min": "3.9",
   "tesseract_min": "5.0",
   "tested_on": [
