@@ -117,6 +117,26 @@ PROBE = r"""
 """
 
 
+def split_nav(text):
+    """Return (text without the 导航 block, list of nav row lines)."""
+    marker = "## 导航"
+    if marker not in text:
+        return text, []
+    head, _, tail = text.partition(marker)
+    rows, rest_lines = [], []
+    for line in tail.splitlines():
+        s = line.strip()
+        if s.startswith("|") and not re.fullmatch(r"\|[\s\-:|]+\|", s) and "从" not in s:
+            rows.append(s)
+        elif rest_lines or (s and not s.startswith("|")):
+            rest_lines.append(line)
+    leftover = "\n".join(rest_lines).strip()
+    body = head.rstrip()
+    if leftover:
+        body += "\n\n" + leftover
+    return body + "\n", rows
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--port", type=int, default=9339)
@@ -141,14 +161,21 @@ def main():
     if not items:
         sys.exit("no interactive controls found on this target")
 
+    title = (a.title or f"页面：{a.match or 'main'}").strip()
+    if not title:
+        sys.exit("--title must not be empty")
+
     out = pathlib.Path(a.out).expanduser()
     out.parent.mkdir(parents=True, exist_ok=True)
-    existing = out.read_text(encoding="utf-8") if out.exists() else ""
+    raw_existing = out.read_text(encoding="utf-8") if out.exists() else ""
+    # template instructions live in HTML comments and contain example tables;
+    # drop them so section/nav lookups only see real content
+    cleaned = re.sub(r"<!--.*?-->", "", raw_existing, flags=re.S)
+    existing, nav_rows = split_nav(cleaned)
     # ids must stay unique across screens; continue after the highest one seen
     used = [int(m) for m in re.findall(r"^\|\s*U(\d+)\s*\|", existing, flags=re.M)]
     first = (max(used) + 1) if used else 1
 
-    title = a.title or (f"页面：{a.match or 'main'}")
     rows = []
     for n, it in enumerate(items, start=first):
         state = "可见" if it.get("visible") else "存在但不可见"
@@ -172,20 +199,20 @@ def main():
         + "\n"
     )
     if f"## {title}" in existing:
+        out.write_text(existing, encoding="utf-8")
         sys.exit(f"{out} already has a section titled {title!r}; pick another --title")
     existing += block
 
     if a.nav_from and a.nav_to:
-        edge = f"| {a.nav_from} | {a.nav_via or ''} | {a.nav_to} |  | 由 ui-map.py 记录 |\n"
-        if "## 导航" in existing:
-            existing = existing.rstrip("\n") + "\n" + edge
-        else:
-            existing += (
-                "\n## 导航\n\n"
-                "| 从 | 控件 | 到 | 返回方式 | 备注 |\n"
-                "|---|---|---|---|---|\n"
-                + edge
-            )
+        nav_rows.append(f"| {a.nav_from} | {a.nav_via or ''} | {a.nav_to} |  | 由 ui-map.py 记录 |")
+    if nav_rows:
+        existing = existing.rstrip() + (
+            "\n\n## 导航\n\n"
+            "| 从 | 控件 | 到 | 返回方式 | 备注 |\n"
+            "|---|---|---|---|---|\n"
+            + "\n".join(nav_rows)
+            + "\n"
+        )
 
     out.write_text(existing, encoding="utf-8")
     print(f"{len(rows)} controls -> {out}", file=sys.stderr)

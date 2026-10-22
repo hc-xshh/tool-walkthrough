@@ -830,8 +830,11 @@ def crawl_issues(run, cov):
         if e["to"] and e["to"] not in known:
             issues.append(f"nav edge points at {e['to']!r}, which has no section in ui-map.md")
 
-    # first-level entries: left-rail rows and top-bar menus must lead somewhere
+    # first-level entries are the ones reachable from the entry screen only;
+    # later screens re-render the same rail and would double-count it
     for c in cov["controls"]:
+        if not re.match(r"S1\b", c["screen"]):
+            continue
         is_entry = c["region"] in ENTRY_REGIONS or (
             c["region"] in ("顶部栏", "顶栏") and c["type"].lower() in MENU_TYPES
         )
@@ -943,7 +946,7 @@ def cmd_audit(a):
     checks.append(("report.md", "PASS" if report_ok else "FAIL", str(report)))
 
     text = report.read_text(encoding="utf-8", errors="replace") if report_ok else ""
-    refs = re.findall(r"shots/[^\s)`\"']+\.(?:png|jpg|jpeg)", text)
+    refs = re.findall(r"(?:shots|screens)/[^\s)`\"']+\.(?:png|jpg|jpeg)", text)
     missing_refs = [r for r in refs if not (run / r).exists()]
     checks.append((
         "report image refs",
@@ -970,7 +973,9 @@ def cmd_audit(a):
         if not p.exists():
             bad_shots.append(str(p))
     unattributed = sum(1 for e in shot_events if not str(e.get("screenshot") or "").strip())
-    if not shot_events and not carried:
+    screens_dir = run / "screens"
+    crawl_shots = sorted(screens_dir.glob("*.png")) if screens_dir.is_dir() else []
+    if not shot_events and not carried and not crawl_shots:
         shot_status = "FAIL"
     elif bad_shots:
         shot_status = "FAIL"
@@ -982,7 +987,7 @@ def cmd_audit(a):
         "shot files",
         shot_status,
         f"{len(shot_events)} shots, {len(carried)} screenshots, "
-        f"{len(bad_shots)} missing, {unattributed} without a path",
+        f"{len(crawl_shots)} crawl screens, {len(bad_shots)} missing, {unattributed} without a path",
     ))
 
     errors = [e for e in events if e.get("result") == "error"]
