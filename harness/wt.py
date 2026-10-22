@@ -807,6 +807,7 @@ def crawl_issues(run, cov):
     """
     issues = []
     shots = sorted(p.name for p in (run / "screens").glob("*.png")) if (run / "screens").is_dir() else []
+    edges = read_nav_edges(run)
 
     for name, items in cov["screens"].items():
         sid = re.match(r"\s*(S\d+)", name)
@@ -820,7 +821,6 @@ def crawl_issues(run, cov):
             issues.append(f"{name}: no task covers this screen")
 
     if cov["screen_count"] > 1:
-        edges = read_nav_edges(run)
         need = cov["screen_count"] - 1
         if len(edges) < need:
             issues.append(f"navigation table has {len(edges)} edge(s), need at least {need} for {cov['screen_count']} screens")
