@@ -89,7 +89,8 @@
 | 导航指向真实界面 | 导航表的「到」必须是地图里存在的屏 | 报 `nav edge points at 'S4', which has no section` |
 | **一级入口都有屏** | 左侧栏每个入口、顶部每个菜单，要么在导航表里有一条边，要么备注写「不产生新屏 / 不测」 | 报 `first-level entry U24 (左侧栏 按钮) has no screen behind it and no reason` |
 | 控件有归属 | 每个控件有任务或原因 | 报未归属清单 |
-| 状态矩阵存在 | `ui-map.md` 有 `## 状态矩阵`，且每屏至少一行状态 | 报 `no state matrix` / `S6 has no state rows` |
+| 状态矩阵存在 | `ui-map.md` 有 `## 状态矩阵`，每屏至少一行，**S1 至少三行**（默认 + 空态/首次/加载中），标「没到」的必须写原因 | 报 `no state matrix` / `S6 has no state rows` / `S1 has 1 state row(s), need at least 3` |
+| 一级入口的理由够用 | 备注里的「不测 / 不产生新屏」要有实际原因（≥ 8 字），只写「不测」不算 | 报 `has no screen behind it and no usable reason` |
 | 任务量 | 填了结果的任务行 8–15 | `audit` 的 `task count` 给 WARN |
 
 这些都在 `wt.py coverage`（`--strict` 退非 0）与 `audit` 的 `ui coverage` / `task count` 里。

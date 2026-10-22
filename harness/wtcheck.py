@@ -139,10 +139,12 @@ def crawl_issues(run, cov):
             continue
         if any(e["control"] == c["id"] for e in edges):
             continue
-        if any(word in c["note"] for word in NO_NEW_SCREEN):
+        # "不测" alone used to be enough to pass; require a reason that says
+        # something ("不测：会触发真实扣费" is fine, a bare "不测" is not)
+        if any(word in c["note"] for word in NO_NEW_SCREEN) and len(c["note"].strip()) >= 8:
             continue
         issues.append(
-            f"first-level entry {c['id']} ({c['region']} {c['type']}) has no screen behind it and no reason"
+            f"first-level entry {c['id']} ({c['region']} {c['type']}) has no screen behind it and no usable reason"
         )
     return issues
 
@@ -156,10 +158,12 @@ def read_state_matrix(run):
         return None
     text = re.sub(r"<!--.*?-->", "", path.read_text(encoding="utf-8", errors="replace"), flags=re.S)
     in_block, header, rows = False, None, []
+    seen_section = False
     for raw in text.splitlines():
         line = raw.strip()
         if line.startswith("## "):
             in_block = line[3:].strip().startswith("状态")
+            seen_section = seen_section or in_block
             header = None
             continue
         if not in_block or not line.startswith("|"):
@@ -182,7 +186,7 @@ def read_state_matrix(run):
             "how": cell("怎么触发"), "reached": cell("本轮到没到"),
             "note": cell("覆盖任务或原因"),
         })
-    return rows
+    return rows if seen_section else None
 
 
 
@@ -203,6 +207,11 @@ def state_issues(run, cov):
         sid = re.match(r"\s*(S\d+)", name)
         if sid and sid.group(1) not in by_screen:
             issues.append(f"{sid.group(1)} has no state rows")
+    # one "默认" row per screen is not a state survey; the entry screen is where
+    # first-run / empty / loading actually differ, so ask for three there
+    entry_rows = by_screen.get("S1", [])
+    if cov["screens"] and len(entry_rows) < 3:
+        issues.append(f"S1 has {len(entry_rows)} state row(s), need at least 3 (默认 + 空态/首次/加载中)")
     for r in rows:
         if "没到" in r["reached"] and not r["note"].strip():
             issues.append(f"state '{r['state']}' on {r['screen']} is marked 没到 without a reason")
@@ -252,6 +261,9 @@ def cmd_coverage(a):
     print(f"  covered    {cov['covered']}")
     print(f"  skipped    {cov['skipped']}  (has a reason in 备注)")
     print(f"  uncovered  {len(cov['uncovered'])}")
+    if not cov["total"]:
+        print("  hint       ui-map.md has no control rows yet — crawl the product (METHOD Step 1),")
+        print("             e.g. python3 harness/ui-map.py --port 9339 --out <run>/ui-map.md --title 'S1 首屏'")
     for name, items in cov["screens"].items():
         mine = sum(1 for c in items if c["covers"])
         print(f"  - {name}: {len(items)} controls, {mine} covered")
@@ -337,6 +349,9 @@ def cmd_audit(a):
 
     text = report.read_text(encoding="utf-8", errors="replace") if report_ok else ""
     refs = re.findall(r"(?:shots|screens)/[^\s)`\"']+\.(?:png|jpg|jpeg)", text)
+    # the report template ships placeholders (shots/xx.png, shots/<图>.png); they
+    # must not turn a fresh run into a FAIL before anything is captured
+    refs = [r for r in refs if not re.search(r"[<>]|/(?:xx|xxx)\.|/xx[-.]", r)]
     missing_refs = [r for r in refs if not (run / r).exists()]
     checks.append((
         "report image refs",

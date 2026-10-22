@@ -12,8 +12,14 @@
 - `new-run` 多复制一份 `templates/ui-map.md`（含导航表与注释示例）、建 `screens/` 与 `logs/crawl-notes.txt`；`templates/task-plan.md` 增加「覆盖控件」列与「未覆盖控件」表。
 - **遍历防偷懒检查**：`coverage` 现在不只数控件，还查「每屏有首访图（`screens/<S 编号>-*.png`）、每屏有任务、界面带 S 编号、导航表行数 ≥ 界面数 − 1、导航目标必须存在」，以及**一级入口覆盖**——左侧栏每个入口和顶部每个菜单，要么在导航表里有一条边，要么备注写「不产生新屏 / 不测」；`audit` 新增 `task count`（只数填了结果的行，8–15）。`--strict` 下这些都给非 0。
 
-## Unreleased
+## v5.1 — 2026-10-22（不改流程，只加固 harness 与文档）
 
+- **`wt.py` 拆分**（1140 行 → 4 个文件，`WT_VERSION` 1.4.0）：`wtlib.py`（路径/画像/run/事件/harness.json）、`wtshot.py`（DPI 与 `capture_screen`）、`wtcheck.py`（四份表格解析 + 覆盖/爬取/状态/归因检查 + audit/coverage）、`wt.py`（CLI 与执行类命令）。四份重复的 markdown 表格解析合并的入口留到下一步。
+- **状态矩阵**：`ui-map.md` 末尾新增 `## 状态矩阵`，登记「默认/空态/加载中/失败/首次进入…」及到没到；`coverage` 检查它存在、每屏至少一行、S1 至少三行、标「没到」的必须写原因。文档明确：遍历只覆盖**静态可达面**，状态要**用出来**才出现，报告不许写「完整覆盖」。
+- **发现必须自证**：每条发现写「归因（产品/脚本/环境/未定）」与「复现次数」，S3/S4 要 2 次以上；`audit` 新增 `finding attribution` 检查。
+- **一级入口门禁**：左侧栏每个入口、顶部每个菜单，要么在导航表里有边，要么写够长的原因（只写「不测」不再算数）。
+- **遍历可落地**：`shot-window.ps1` 提升进 `harness/`（按窗口截图，并写入 `shot-window` 事件，`audit` 认它），`ui-map.py` 修正导航/状态矩阵的排布与注释误读。
+- 平台与模板打磨：`audit` 忽略模板里的 `shots/xx.png` 占位符；`coverage` 在空地图上给爬山提示；`new-run` 模板不再包含空占位节。
 - `audit` 修复「假绿」：`shot` 事件没有截图路径、或截图文件已丢失时不再判 PASS；一次截图都没有时直接 FAIL；`click` 后补截图的检查覆盖 `cdp:click*`；新增 `--strict`，WARN 也视为失败，供 CI 使用（默认仍只对 FAIL 退非 0）。
 - `cdp.py` 点击目标找不到、或 `eval` 的 JS 抛异常时返回非 0，不再打印一句 `not found` 就退出 0；`--nested` 不再用字符串替换改写表达式（会破坏 `documentElement` 和含 "document" 的字符串字面量）。
 - `build-report.py` 正文里 `shots/*.png` 图片内联为 data URI（此前在临时目录的 HTML 里全部 404，PDF 正文没有图）；改用私有 `--user-data-dir`，避免 Chrome 已在运行时打印失败（exit 21）。

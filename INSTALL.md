@@ -85,8 +85,13 @@ pip install -r harness/requirements.txt
 python3 harness/wt.py profiles
 python3 harness/wt.py --profile linux-desktop preflight   # 全量：真实桌面
 python3 harness/wt.py --profile linux-x11 preflight       # 无头 / CI：先跑 desktop-up.sh
-python3 harness/wt.py audit runs/<run>      # 走后查本轮证据
+python3 harness/wt.py audit runs/<run>      # 走后查本轮证据（--strict 把 WARN 也算失败）
+python3 harness/wt.py coverage runs/<run>   # 页面地图：未归属控件、首访图、状态矩阵、一级入口
 ```
+
+`audit` 认这些落点：报告在 `report.md`、图在 `shots/` 与 `screens/`、页面地图在 `ui-map.md`
+（含 `## 导航` 与 `## 状态矩阵` 两张表）、任务在 `task-plan.md`、事件在 `events.jsonl`。
+枚举控件用 `python3 harness/ui-map.py --port 9339 --out runs/<run>/ui-map.md --title "S1 首屏"`。
 
 输出里 `FAIL` 需要处理，`WARN` 需要判断：
 
