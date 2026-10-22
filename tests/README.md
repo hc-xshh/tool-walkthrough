@@ -3,7 +3,7 @@
 检查项自己的回归测试。标准库 `unittest`，不需要装任何东西：
 
 ```bash
-python -m unittest discover -s tests -v     # 41 个用例，约 3 秒
+python -m unittest discover -s tests -v     # 64 个用例，约 3 秒
 python -m pytest tests -q                   # 装了 pytest 也能跑
 ```
 
@@ -24,6 +24,7 @@ python -m pytest tests -q                   # 装了 pytest 也能跑
 | `test_coverage.py` | 首访图、每屏有任务、S 编号、导航边数与目标、一级入口（含"只写不测不算"）、状态矩阵（缺失 / 少于三行 / 三行默认 / 没到没原因）、单屏与空地图不崩 |
 | `test_audit.py` | 模板占位符不算幻觉引用、真缺图判 FAIL、事件指向已删图判 FAIL、error 事件只 WARN、任务数 8–15（空结果不算）、发现缺归因判 WARN、`--strict` 把 WARN 变失败 |
 | `test_cli.py` | 十个子命令 `--help` 都能起、`coverage` / `audit` 的退出码与提示语 |
+| `test_report_images.py` | 涂白改写像素（界内变白、界外不动、越界不崩、JPEG 源输出 PNG）、`redact` 的 `*` 通配与按图合并、本地图内联为 data URI（远程/缺失/未知扩展名不动）、图注编号（起点续号、alt 转义、alt 含 `>` 仍能编号）、`--redact` 参数格式错误退 2 |
 
 ## 加用例的原则
 

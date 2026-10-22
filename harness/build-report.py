@@ -95,7 +95,12 @@ def inline_local_images(md_text, run, cli_rects=(), caps_redact=None):
     return MD_IMAGE.sub(repl, md_text)
 
 
-STANDALONE_IMG = re.compile(r"<p>\s*(<img\b[^>]*>)\s*</p>", re.IGNORECASE)
+STANDALONE_IMG = re.compile(
+    # attributes may contain ">" inside quotes (alt="速度 > 3s"), so skip over
+    # quoted spans instead of stopping at the first ">"
+    r'<p>\s*(<img\b(?:[^>"\']|"[^"]*"|\'[^\']*\')*>)\s*</p>',
+    re.IGNORECASE,
+)
 
 
 def figure_standalone_images(html, start=0):

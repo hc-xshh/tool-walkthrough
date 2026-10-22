@@ -136,7 +136,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 41 个用例，覆盖 coverage / audit / CLI
+python3 -m unittest discover -s tests -v     # 64 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 用例在临时目录里造"假 run"，只改一处再断言工具的反应；改判据时先跑一遍，别让"拦住偷懒"的检查在重构里悄悄失效（`tests/README.md`）。
