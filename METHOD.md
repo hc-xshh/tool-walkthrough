@@ -184,7 +184,7 @@ n=1 不写成功率、不写百分比；「3/5 用户」只属于有真实样本
 ## 8. 证据规范
 
 - 命名：`<task>-<step>-<state>.png`（如 `t4-02-after-submit.png`）
-- 事件时间线：`runs/<run>/events.jsonl` 记录每次截图 / 点击 / OCR / 启动的时间、结果与耗时；报告里的步骤编号应与它对应，`wt.py audit` 会检查缺口
+- 事件时间线：`runs/<run>/events.jsonl` 记录每次截图 / 点击 / OCR / 启动的时间、结果与耗时；报告里的步骤编号应与它对应，`wt.py audit` 会核对证据文件是否存在、报告里的图片引用、`click` 后是否补了截图、有没有 error 事件，以及 `harness.json` 是否存在（不检查步骤编号连续性）
 - 任务 trace：`runs/<run>/trace/task-trace.md` 记录项目、prompt、工具调用与结果；`logs/task-trace.txt` 保留展开后的原文；截图至少含「工具折叠」和「工具展开」两张
 - 动作前后成对；状态变化必须有第二张图，不能只截结果
 - 权限弹窗截两张：第一次出现，以及选「始终允许」之后再次出现（证明是否生效）
@@ -196,10 +196,10 @@ n=1 不写成功率、不写百分比；「3/5 用户」只属于有真实样本
 
 | 项 | 做法 | 原因 |
 |---|---|---|
-| 桌面 | Xvfb（X11）+ openbox | 与真实桌面隔离；可截图、可点 |
+| 桌面 | 真实桌面（`linux-desktop`）跑全量；Xvfb（X11）+ openbox 只用于 CI / 无头冒烟 | 原生弹窗、通知、电脑操控必须在真实会话验证；Xvfb 可截图、可点 |
 | DBus | 每次走查一个私有 session bus | 避免命中真实实例的单实例锁 |
 | HOME | 独立目录（`WALKTHROUGH_BASE/home`） | 得到真正的首次安装状态 |
-| 应用后端 | GUI 强制 `GDK_BACKEND=x11`、软件渲染 | Wayland 原生窗口在 Xvfb 里不可见 |
+| 应用后端 | Xvfb / `linux-x11` 下强制 `GDK_BACKEND=x11`、软件渲染（`software_gl`）；`linux-desktop` 保留 GPU | Wayland 原生窗口在 Xvfb 里不可见；真实桌面不能用软件渲染代替 |
 | 登录态 | 需要账号的工具用真实 HOME 起在隔离桌面 | 用户登录一次，后续复用 |
 
 已知限制：隔离 HOME 不代表老用户升级；Xvfb 字体/DPI 与真机有差异；Electron 走 Wayland 时要另加 `--ozone-platform=wayland`。

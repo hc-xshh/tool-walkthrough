@@ -2,6 +2,18 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## Unreleased
+
+- `audit` 修复「假绿」：`shot` 事件没有截图路径、或截图文件已丢失时不再判 PASS；一次截图都没有时直接 FAIL；`click` 后补截图的检查覆盖 `cdp:click*`；新增 `--strict`，WARN 也视为失败，供 CI 使用（默认仍只对 FAIL 退非 0）。
+- `cdp.py` 点击目标找不到、或 `eval` 的 JS 抛异常时返回非 0，不再打印一句 `not found` 就退出 0；`--nested` 不再用字符串替换改写表达式（会破坏 `documentElement` 和含 "document" 的字符串字面量）。
+- `build-report.py` 正文里 `shots/*.png` 图片内联为 data URI（此前在临时目录的 HTML 里全部 404，PDF 正文没有图）；改用私有 `--user-data-dir`，避免 Chrome 已在运行时打印失败（exit 21）。
+- 坐标：`shot` 写出 `<png>.json` 边车（原点 / 缩放 / 尺寸），`click --shot <png>` 按它换算；Windows 截图与点击都声明 DPI 感知；Linux 截图尺寸改为实测（`xdpyinfo`），只在 `software_gl` 为真的 profile 强制软件渲染。
+- 脚本健壮性：`ocr.sh` 不再用 `|| true` 吞掉 tesseract 失败；`app-launch.sh` 校验可执行并建 `runtime/`；`desktop-up.sh` 起不来时非 0；`new-run.sh` 转调 `wt.py`；`portal-shot.py` 预推 handle、清理临时文件。
+- `preflight` 检查 `chi_sim` 语言包、`xdpyinfo` 与 CDP 依赖；`events.jsonl` / 边车读取容忍 BOM（否则首行解析失败会静默丢事件）。
+- `new-run` 预置 `trace/`、`logs/task-trace.txt` 并复制四个模板；`launch --app` 可以不带命令（macOS）。
+- 文档与模板对齐：`harness.json` 替代 `meta.json`；S3 补复核字段；任务 trace 补耗时列与 `logs/task-trace.txt` 落点；调研补能力清单与原文摘录；任务矩阵补备注列与实景任务样例。
+- README / INSTALL / METHOD 澄清真实桌面与软件渲染边界：`linux-desktop` 保留 GPU，`linux-x11` 与 `ci` 才走软件渲染；`audit` 只对 FAIL 退非 0。
+
 ## v4 — 2026-10-20
 
 - 新增「实景任务执行 trace」：至少 1 个真实项目 / 用户场景，记录 prompt、产物和产品外独立验证。

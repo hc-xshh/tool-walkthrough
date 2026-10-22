@@ -30,42 +30,45 @@
 
 Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.py` 走原生截图 / 点击，隔离靠独立用户或虚拟机。
 
-需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及三个 pip 包。Linux 额外需要 Xvfb、openbox、dbus、ffmpeg、xdotool。
+需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及三个 pip 包。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
 
 完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
 
 ## 快速开始
 
 ```bash
-# 0. 先做工具调研（20–30 分钟，只读文档，不预演界面）
-#    产出 runs/<date>-<tool>/tool-profile.md；模板 templates/tool-profile.md
-#    来源优先级与 8 项清单见 METHOD.md 的 Step 0
-
-# 1. 建本轮目录（三平台）
+# 准备：建本轮目录（三平台）
+#   同时生成 trace/ shots/ logs/ artifacts/，并从 templates/ 复制
+#   tool-profile.md、task-plan.md、task-trace.md、report.md 骨架
 python3 harness/wt.py new-run 2026-10-19-<tool>
 
-# 2. 预检（三平台）
+# 0. 先做工具调研（20–30 分钟，只读文档，不预演界面）
+#    产出 runs/<date>-<tool>/tool-profile.md（new-run 已复制模板）
+#    来源优先级与 8 项清单见 METHOD.md 的 Step 0
+
+# 1. 预检（三平台）
 python3 harness/wt.py preflight
 
-# 3. 启动应用（带 --run 才会写事件日志）
+# 2. 启动应用（带 --run 才会写事件日志）
 #    Linux：默认全新 HOME；需要登录态时设 WALKTHROUGH_HOME / WALKTHROUGH_DBUS
 python3 harness/wt.py --run runs/<run> launch --log runs/<run>/logs/app.log -- /usr/bin/<app>
 #    macOS：--app 走 `open -a`；Windows：直接传 exe 路径
 python3 harness/wt.py --run runs/<run> launch --app "<AppName>" --log runs/<run>/logs/app.log
+#    macOS 要给应用传参数时，再加 `-- <参数...>`（例如 -- --new-window）
 
-# 4. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
+# 3. 原生 GUI：截图 / OCR 找坐标 / 点击（三平台）
 python3 harness/wt.py --run runs/<run> shot runs/<run>/shots/01.png
 python3 harness/wt.py --run runs/<run> ocr runs/<run>/shots/01.png
 python3 harness/wt.py --run runs/<run> click 300 241
 
-# 5. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
+# 4. Electron / WebView：CDP 读 DOM、按文字点、截渲染层
 #    启动时加 --remote-debugging-port=9339
 python3 harness/cdp.py text
 python3 harness/cdp.py clicktext "登录"
 python3 harness/cdp.py clickel "允许读取" --nth 0   # 选项带序号时按第 n 个匹配点
 python3 harness/cdp.py shot runs/<run>/shots/02.png
 
-# 6. 出 PDF（中间 HTML 只写临时目录）
+# 5. 出 PDF（中间 HTML 只写临时目录）
 python3 harness/wt.py report runs/<date>-<tool>
 
 # Linux 隔离桌面（可选；macOS / Windows 用独立用户或虚拟机）
@@ -79,8 +82,9 @@ python3 harness/wt.py report runs/<date>-<tool>
 公开仓同时是工作区；报告、截图和日志只留在本地：
 
 1. 建本轮目录：`python3 harness/wt.py new-run 2026-10-19-<tool>`
-   （生成 `runs/<run>/{shots,logs,artifacts}`）
+   （生成 `runs/<run>/{trace,shots,logs,artifacts}`，并从 `templates/` 复制 `tool-profile.md`、`task-plan.md`、`task-trace.md`、`report.md`）
 2. 跑走查、写 `report.md`，产物放同一目录
+   （模板会自动复制到 `<run>/`，`task-trace.md` 落在 `trace/`；手工建目录时要自己 `cp`。`build-report.py` 和 `wt.py audit` 都读 `<run>/report.md`）
 3. 只提交方法 / 模板 / harness 的改动；`runs/` 已被 `.gitignore` 忽略
 4. 首次 clone 后跑一次 `./harness/install-git-hooks.sh`
 
@@ -103,7 +107,7 @@ python3 harness/wt.py report runs/<date>-<tool>
 python3 harness/wt.py audit runs/<run>
 ```
 
-逐项检查：`report.md` 是否存在、报告里引用的截图是否都在、`shot` 事件的文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图、`harness.json` 是否存在。有 FAIL 时退出码非 0，可以直接接 CI。
+逐项检查：`report.md` 是否存在、报告里引用的截图是否都在、`shot` 事件的文件是否还在、有没有 error 事件、每次 `click` 之后是否补了截图、`harness.json` 是否存在。`audit` 只对 FAIL 返回非 0，证据为空或只有 WARN 时仍可能退 0；CI 请用 `audit --strict`（WARN 也视为失败）。
 
 **Profiles**：
 
@@ -114,7 +118,7 @@ python3 harness/wt.py --profile linux-desktop preflight
 
 profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选（Linux 默认 `linux-desktop`，Xvfb 用 `linux-x11`）。
 
-**真实桌面优先**：全量走查默认在现有 GNOME 会话跑。`linux-desktop` 用 `DISPLAY=:0` + Xwayland auth，保留 GPU、原生文件选择器、通知、桌面宠物和电脑操控。`linux-x11` 只用于 CI / 无人值守冒烟；真实桌面上不要加 `--disable-gpu`，否则动画和滚动会变慢，观感结论会失真。
+**真实桌面优先**：全量走查默认在现有 GNOME 会话跑。`linux-desktop` 用 `DISPLAY=:0` + Xwayland auth，保留 GPU、原生文件选择器、通知、桌面宠物和电脑操控。`linux-x11` 与 `ci` 才设 `LIBGL_ALWAYS_SOFTWARE=1` 走软件渲染（由 profile 的 `software_gl` 字段决定），只用于 CI / 无人值守冒烟；真实桌面上不要加 `--disable-gpu`，否则动画和滚动会变慢，观感结论会失真。
 
 **版本锚定**：`harness/harness.lock` 记录 `wt_version`、最低 Python / tesseract 版本和已实测平台；`preflight` 会对照它给出 WARN。报告附录建议带上 `harness.json` 的版本信息。
 
@@ -126,7 +130,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 | 点击 | `xdotool` | `cliclick`，没有则 AppleScript | `ctypes`（user32） |
 | OCR | tesseract | tesseract（brew） | tesseract（PATH） |
 | Electron / CDP | `cdp.py` | `cdp.py` | `cdp.py` |
-| 隔离 | Xvfb + 私有 DBus | 独立 macOS 用户或虚拟机 | 独立用户或虚拟机 |
+| 隔离 | 默认真实桌面；Xvfb 隔离仅 CI/无头 | 独立 macOS 用户或虚拟机 | 独立用户或虚拟机 |
 | 出 PDF | Chrome / Chromium | Chrome / Chromium / Edge | Chrome / Chromium / Edge |
 | Git 钩子 | bash | bash | Git Bash |
 
@@ -143,7 +147,7 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 1. **先定决策问题**：谁读、要做什么决定、这次不回答什么。
 2. **任务驱动，不按菜单逛**：5–8 个用户任务，覆盖首启、核心任务、产物取回、失败态、连续任务、设置。
 3. **每条发现四件事**：具体元素 + 导致的后果 + 证据 + 建议；不写「用户找不到」。
-4. **0–4 严重度**：4 阻断 / 3 严重 / 2 轻微 / 1 观感；S3/S4 必须人工复核，n=1 不写成功率。
+4. **0–4 严重度**：4 阻断 / 3 严重 / 2 轻微 / 1 观感 / 0 不是问题；S3/S4 必须人工复核，n=1 不写成功率。
 5. **报告先给前三**，另有「做对了什么」，防止团队把没坏的部分一起改。
 
 ## 边界（写进交付，不要省）

@@ -60,6 +60,7 @@ py -3 harness\wt.py shot shots\01.png
 - 截图走 PowerShell + .NET，点击走 `ctypes` 调 user32，不需要额外工具。
 - 不能从非提权进程点击提权窗口（UAC 隔离）；被测应用是管理员权限时，agent 也要用管理员权限启动。
 - 隔离：新建一个 Windows 用户，或使用虚拟机；不要在日常账号的桌面上做破坏性操作。
+- tesseract 必须确认 `chi_sim` 已装：`tesseract --list-langs` 能看到 `chi_sim`，否则中文 OCR 输出乱码；`preflight` 会检查这一项。
 
 ## 4. Python 依赖
 
@@ -82,15 +83,17 @@ pip install -r harness/requirements.txt
 
 ```bash
 python3 harness/wt.py profiles
-python3 harness/wt.py --profile linux-x11 preflight
+python3 harness/wt.py --profile linux-desktop preflight   # 全量：真实桌面
+python3 harness/wt.py --profile linux-x11 preflight       # 无头 / CI：先跑 desktop-up.sh
 python3 harness/wt.py audit runs/<run>      # 走后查本轮证据
 ```
 
 输出里 `FAIL` 需要处理，`WARN` 需要判断：
 
-- `tesseract FAIL` → Linux 装 `tesseract-ocr-chi-sim`；macOS 装 `tesseract-lang`；Windows 把安装目录加进 PATH
-- `chrome FAIL` → 装 Chrome / Chromium / Edge，或设 `WALKTHROUGH_CHROME`
-- `display :98 FAIL`（仅 Linux）→ 先跑 `./harness/desktop-up.sh :98 1440x900x24`
+- `tesseract WARN` → Linux 装 `tesseract-ocr-chi-sim`；macOS 装 `tesseract-lang`；Windows 把安装目录加进 PATH（并确认 `chi_sim` 已装）
+- `chrome WARN` → 装 Chrome / Chromium / Edge，或设 `WALKTHROUGH_CHROME`
+- `display :0 FAIL`（`linux-desktop`）→ 确认在真实图形会话里，`DISPLAY=:0` 与 XAUTHORITY（Xwayland auth 文件）可用，见第 1 节
+- `display :98 FAIL`（`linux-x11`）→ 先跑 `./harness/desktop-up.sh :98 1440x900x24`；`ci` profile 默认 `:99`，同样先起 Xvfb 再预检
 - `cliclick WARN`（macOS）→ 可装可不装；不装则点坐标走 AppleScript
 - macOS 权限没开 → 截图黑屏或点击无效，去“隐私与安全性”补
 
