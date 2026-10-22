@@ -6,7 +6,7 @@
 
 | Harness² 组件 | 这里放什么 |
 |---|---|
-| system prompt | `systemprompt.md`：执行顺序、决策契约、五件交付物、完成判据 |
+| system prompt | `systemprompt.md`：执行顺序、决策契约、六件交付物、完成判据 |
 | guardrails | `guardrails.md`：凭据只由用户输入、环境三档、PII 与证据入库规则 |
 | memory | `LongTermMEMORY.md`：跨轮经验（cue / lesson / evidence / confidence） |
 | tool guidance | `tool_descriptions/tool_guidance.md`：工具怎么调（cdp.py 读取 / 点击 / 输入、平台接线） |

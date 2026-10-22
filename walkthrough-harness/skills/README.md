@@ -10,8 +10,8 @@ Four walkthrough skills. Three live in `METHOD.md` and `templates/`; `finding-wr
 
 ## 2. Task plan
 
-- 5–8 user tasks: first run, core task, artifact retrieval, failure state, settings, **continuous task**.
-- Each task: start state, success criterion, observation points.
+- 8–15 user tasks derived from the page map (one per screen at minimum): first run, core task, artifact retrieval, failure state, settings, **continuous task**.
+- Each task: start state, success criterion, observation points, covered control ids.
 - Use `templates/task-plan.md`.
 
 ## 3. Finding writing
