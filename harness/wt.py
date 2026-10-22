@@ -788,10 +788,6 @@ def read_nav_edges(run):
     return edges
 
 
-def count_nav_edges(run):
-    return len(read_nav_edges(run))
-
-
 ENTRY_REGIONS = ("左侧栏", "导航栏", "底部栏")
 MENU_TYPES = ("menu", "menubar", "下拉", "菜单")
 NO_NEW_SCREEN = ("不产生新屏", "不新开屏", "同屏", "切换本屏", "留在本屏", "就地", "不测")
