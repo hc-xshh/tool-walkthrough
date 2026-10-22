@@ -207,10 +207,19 @@ def state_issues(run, cov):
         if sid and sid.group(1) not in by_screen:
             issues.append(f"{sid.group(1)} has no state rows")
     # one "默认" row per screen is not a state survey; the entry screen is where
-    # first-run / empty / loading actually differ, so ask for three there
+    # first-run / empty / loading actually differ, so ask for three there and at
+    # least one of them must be a real variant, not "默认" three times
     entry_rows = by_screen.get("S1", [])
     if cov["screens"] and len(entry_rows) < 3:
         issues.append(f"S1 has {len(entry_rows)} state row(s), need at least 3 (默认 + 空态/首次/加载中)")
+    elif entry_rows:
+        variant = any(
+            word in r["state"]
+            for r in entry_rows
+            for word in ("空", "首次", "加载", "失败", "错误", "无权限", "离线", "首启")
+        )
+        if not variant:
+            issues.append("S1 states are all 默认-like; name the empty / first-run / loading / failure state you saw")
     for r in rows:
         if "没到" in r["reached"] and not r["note"].strip():
             issues.append(f"state '{r['state']}' on {r['screen']} is marked 没到 without a reason")
