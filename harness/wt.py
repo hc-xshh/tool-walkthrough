@@ -34,7 +34,6 @@ import platform
 import shutil
 import subprocess
 import sys
-import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -42,7 +41,7 @@ from pathlib import Path
 from wtlib import *  # noqa: F401,F403  (ROOT, OS, WT_VERSION, helpers)
 from wtlib import profile, resolve_run, log_event
 import wtshot
-from wtshot import desktop_metrics, enable_dpi_awareness, read_shot_meta, shot_meta_path
+from wtshot import enable_dpi_awareness, read_shot_meta
 from wtcheck import cmd_audit, cmd_coverage
 
 
