@@ -14,6 +14,7 @@
 import argparse
 import fnmatch
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -78,6 +79,28 @@ def patch_line_counts(patch_text):
         if line.startswith("-") and not line.startswith("---")
     )
     return added, removed
+
+
+DEBUG_RE = re.compile(r"\b(pdb\.set_trace|breakpoint\(|import pdb|TODO|FIXME|XXX)\b")
+
+
+def quality_checks(spec, changes, patch, verdict):
+    """「结果能不能直接用」：多出来的文件、调试残留。"""
+    allowed = spec.get("allowed", ["**"])
+    extra = [
+        p for p in changes.get("added", [])
+        if not any(fnmatch.fnmatch(p, glob) for glob in allowed)
+    ]
+    markers = []
+    for line in patch.splitlines():
+        if line.startswith("+") and not line.startswith("+++"):
+            if DEBUG_RE.search(line):
+                markers.append(line[1:].strip()[:120])
+    return {
+        "extra_files": extra,
+        "debug_markers": markers,
+        "usable": verdict == "pass" and not extra and not markers,
+    }
 
 
 def scope_check(changes, spec):
@@ -165,8 +188,10 @@ def main():
 
     result["accept"] = accept_payload
     result["git"] = git_evidence(workdir)
-    # 快照只存哈希，改过的文件原文已不在；patch 用 git diff 重建，没有 git 时才用快照文本
-    result["patch"] = (result["git"] or {}).get("diff") or patch[-40000:]
+    # 快照只存哈希，改过的文件原文已不在；patch 用 git diff 重建。
+    # 但 git diff 不含未跟踪的新文件，这部分由快照补上（否则新增的调试文件看不见）。
+    git_patch = (result["git"] or {}).get("diff") or ""
+    result["patch"] = git_patch + ("\n" + patch if patch.strip() else "")
     result["changes"]["lines_added"], result["changes"]["lines_removed"] = patch_line_counts(
         result["patch"]
     )
@@ -188,6 +213,7 @@ def main():
 
     result["verdict"] = verdict
     result["reason"] = reason
+    result["quality"] = quality_checks(spec, changes, result["patch"], verdict)
 
     out = Path(a.out) if a.out else workdir.parent / "results" / f"{spec['id']}-r{a.rep}.json"
     out.parent.mkdir(parents=True, exist_ok=True)

@@ -16,6 +16,7 @@ LEVEL = {
     "L5-notes-sync": "L5",
     "L6-notes-soft-delete": "L6",
     "L7-billing-export": "L7",
+    "L8-payments-idem": "L8",
 }
 
 
@@ -52,17 +53,20 @@ def build(rows):
         )
 
     lines += ["", "## 明细", ""]
-    lines.append("| 任务 | 次数 | 判定 | 隐藏验收 | 可见测试 | 耗时(s) | 授权 | 改动行 |")
-    lines.append("|---|---|---|---|---|---|---|---|")
+    lines.append("| 任务 | 次数 | 判定 | 隐藏验收 | 可见测试 | 耗时(s) | 授权 | 轮次 | 可用 | 改动行 |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
     for r in sorted(rows, key=lambda x: (LEVEL.get(x["task"], ""), x["rep"])):
         acc = r.get("accept") or {}
         vis = r.get("visible") or {}
         ch = r.get("changes") or {}
+        quality = r.get("quality") or {}
+        usable = "✅" if quality.get("usable") else "—"
         lines.append(
             f"| {r['task']} | {r['rep']} | {r['verdict']} | "
             f"{acc.get('passed', '—')}/{acc.get('total', '—')} | "
             f"{'ok' if vis.get('rc') == 0 else ('rc=' + str(vis.get('rc')))} | "
             f"{fmt(r.get('duration_s'), 1)} | {r.get('interventions', 0)} | "
+            f"{r.get('rounds', 1)} | {usable} | "
             f"+{ch.get('lines_added', 0)}/−{ch.get('lines_removed', 0)} |"
         )
 

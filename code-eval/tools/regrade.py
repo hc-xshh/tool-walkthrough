@@ -43,6 +43,11 @@ def main():
         if t.get("duration_s") is not None:
             cmd += ["--duration", str(t["duration_s"])]
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")
+        if path.exists() and ("rounds" in old or "rounds_to_pass" in old):
+            fresh = json.loads(path.read_text(encoding="utf-8"))
+            fresh["rounds"] = old.get("rounds", 1)
+            fresh["rounds_to_pass"] = old.get("rounds_to_pass")
+            path.write_text(json.dumps(fresh, ensure_ascii=False, indent=2), encoding="utf-8")
         print(f"{path.stem:<26} rc={p.returncode} {p.stdout.strip().splitlines()[-2] if p.stdout else ''}")
     return 0
 

@@ -2,6 +2,13 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v5.5 — 2026-10-23（场景 3：存量工程 + 两个新指标）
+
+- **L8-payments-idem**：一个多模块支付仓库，三处必须一起改的 bug——幂等键带了时间戳、金额换算用 `int()` 截断、超时重试换了新键。6 条隐藏验收覆盖重复请求、超时重试、金额 half-up、重放一致性；只修一处的变体判失败。
+- **`--max-rounds`**：不通过就把隐藏验收的失败摘要（测试名 + 最后一行断言，不给源码）喂回去继续修，`rounds_to_pass` 记第几轮过。默认 1 轮，等于不重试。
+- **`quality.usable`**：通过且没在 `allowed` 之外新建文件、补丁里没有 `TODO/FIXME/breakpoint/pdb` 才算「结果能直接用」。`grade.py` 的 patch 现在会补上未跟踪的新文件（`git diff` 不含它们，之前新增的调试文件在判分里是隐形的）。
+- 真实数据：L8 三次都是第 1 轮过、每次约 16 行、可用为 true；跨文件一致性没有变成门槛。
+
 ## v5.4 — 2026-10-23（不抢输入 + 两条新轴）
 
 - **走查可以不抢用户的鼠标键盘**：新增 `WALKTHROUGH_NO_NATIVE_INPUT=1`（或单次 `click --no-native-input`），`wt.py click` 会直接拒绝并提示改用 `cdp.py`；`preflight` 打印当前模式。除了 `click`（Windows `SetCursorPos` / macOS `cliclick` / Linux `xdotool`），截图、OCR、`launch`、CDP 驱动的点击与输入都不注入系统输入。README / INSTALL / METHOD 各补了一段。

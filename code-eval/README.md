@@ -45,6 +45,18 @@ code-eval/
 **每条隐藏验收必须能对到任务书的一句话**。对不上的，删掉，或者补进任务书——否则判分器会
 制造「假阴性」，看起来是工具不行，其实是题出得不公平（L5 的 `deleted` 计数踩过一次）。
 
+## 两个额外指标：几轮改对、能不能直接用
+
+- **轮次**：`max_rounds` 控制。第一轮不过就把隐藏验收的失败摘要（只给测试名和最后一行断言，
+  不给测试源码）喂回去让它继续修；`rounds_to_pass` 记第几轮过。没配置时默认 1 轮，等于不重试。
+- **可用**：`quality.usable` = 通过 **且** 没在 `allowed` 之外新建文件 **且** 补丁里没有
+  `TODO / FIXME / XXX / breakpoint() / pdb`。通过但留了调试文件的，记 pass 但 usable 为 false。
+  未跟踪的新文件也要算进 patch——`git diff` 不含它们，`grade.py` 会用快照补上。
+
+```bash
+python tools/drive_trae.py --task L8-payments-idem ... --max-rounds 3
+```
+
 ## 跑一次
 
 ```bash
@@ -94,6 +106,7 @@ python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/�
 | `L5-notes-sync` | L5 | 长任务：冲突合并、墓碑、幂等、事务、旧账本兼容 | 不看墓碑会复活、不校验输入会写坏账本 |
 | `L6-notes-soft-delete` | L6 | 多轮：先按 L5 实现同步，再追加一轮把物理删除改成软删除 | 第二轮没做、没迁移旧墓碑、把第一轮规则改坏 |
 | `L7-billing-export` | L7 | 128 个文件里定位真正的导出器，作废单不能丢 | 改旧版导出器、只保留列不加标记、金额格式错 |
+| `L8-payments-idem` | L8 | 存量工程：幂等键、金额换算、超时重试三处必须一起改 | 只修一处、换键重试、int 截断金额 |
 
 多轮任务在 spec 里用 `prompts` 数组代替 `prompt`，驱动器在**同一个会话**里依次发送（不新建任务），
 最后统一判分；每轮单独等 idle，上一轮的「任务耗时」不能当完成信号。

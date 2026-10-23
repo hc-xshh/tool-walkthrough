@@ -1,0 +1,16 @@
+{
+  "id": "L8-payments-idem",
+  "level": 8,
+  "title": "存量工程：跨文件修幂等与金额（可多轮）",
+  "fixture": "fixtures/L8-payments-idem/repo",
+  "accept": "accept/L8-payments-idem",
+  "prompt": "tasks/L8-payments-idem.prompt.txt",
+  "allowed": ["payments/**"],
+  "forbidden": ["tests/**", "data/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 1800,
+  "max_rounds": 3
+}

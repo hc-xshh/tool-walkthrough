@@ -179,6 +179,16 @@ def wait_done(log_path, timebox, debug=False, idle_s=45):
     return False, approvals, last_change
 
 
+def build_feedback(result):
+    """把上一轮的隐藏验收失败摘要变成下一轮的 prompt（不给测试源码）。"""
+    lines = ["上一轮没有通过验收，请继续在这个仓库里修（不要改 tests/）："]
+    for failure in (result.get("accept") or {}).get("failures", [])[:8]:
+        tail = [ln for ln in (failure.get("message") or "").splitlines() if ln.strip()]
+        lines.append(f"- {failure.get('test')}: {tail[-1][:160] if tail else ''}")
+    lines.append("改完自己跑一遍 python -m unittest discover -s tests -v，再说明改了什么。")
+    return "\n".join(lines)
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", required=True)
@@ -193,6 +203,8 @@ def main():
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--idle", type=int, default=45,
                     help="界面多久没变化就算任务结束（秒）")
+    ap.add_argument("--max-rounds", type=int, default=1,
+                    help="不过就喂回失败信息继续修，最多几轮（含指定的轮次）")
     ap.add_argument("--dry-run", action="store_true")
     a = ap.parse_args()
 
@@ -235,7 +247,34 @@ def main():
     last_change = started
     ok = True
 
-    for index, prompt in enumerate(prompts, 1):
+    def run_grade():
+        grade_cmd = [
+            sys.executable, str(HERE / "grade.py"),
+            "--task", a.task, "--workdir", str(workdir), "--before", str(before),
+            "--out", a.out, "--rep", str(a.rep), "--tool", a.tool,
+            "--duration", str(round(last_change - started, 1)),
+            "--interventions", str(approvals),
+        ]
+        graded = subprocess.run(grade_cmd, capture_output=True, text=True, encoding="utf-8")
+        print((graded.stdout or "").strip())
+        if graded.returncode != 0 and "result ->" not in (graded.stdout or ""):
+            print((graded.stderr or "")[-800:], file=sys.stderr)
+        out = Path(a.out)
+        return json.loads(out.read_text(encoding="utf-8")) if out.exists() else None
+
+    index = 0
+    result = None
+    while True:
+        index += 1
+        if index <= len(prompts):
+            prompt = prompts[index - 1]
+        else:
+            # 指定的轮次都跑完了，还没过就喂回失败信息继续修，最多到 max_rounds
+            if result is None or result.get("verdict") == "pass" or index > a.max_rounds:
+                index -= 1
+                break
+            prompt = build_feedback(result)
+            log(log_path, "feedback", round=index)
         if index > 1:
             log(log_path, "round", round=index)
             time.sleep(2)
@@ -286,6 +325,7 @@ def main():
             finished=round_ok,
             approvals=round_approvals,
         )
+        result = run_grade()
 
     took = round(time.time() - started, 1)
     measured = round(last_change - started, 1) if last_change else took
@@ -294,18 +334,15 @@ def main():
     except Exception:
         pass
 
-    grade_cmd = [
-        sys.executable, str(HERE / "grade.py"),
-        "--task", a.task, "--workdir", str(workdir), "--before", str(before),
-        "--out", a.out, "--rep", str(a.rep), "--tool", a.tool,
-        "--duration", str(measured), "--interventions", str(approvals),
-    ]
-    g = subprocess.run(grade_cmd, capture_output=True, text=True, encoding="utf-8")
-    print((g.stdout or "").strip())
-    if g.returncode != 0 and "result ->" not in (g.stdout or ""):
-        print((g.stderr or "")[-800:], file=sys.stderr)
+    if result is not None:
+        result["rounds"] = index
+        result["rounds_to_pass"] = index if result.get("verdict") == "pass" else None
+        Path(a.out).write_text(
+            json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8"
+        )
     log(log_path, "graded", finished=ok, approvals=approvals,
-        wall_s=took, measured_s=measured, rounds=len(prompts))
+        wall_s=took, measured_s=measured, rounds=index,
+        verdict=(result or {}).get("verdict"))
     return 0
 
 

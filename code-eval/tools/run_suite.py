@@ -70,6 +70,8 @@ def main():
             ]
             if spec.get("idle_s"):
                 cmd += ["--idle", str(spec["idle_s"])]
+            if spec.get("max_rounds"):
+                cmd += ["--max-rounds", str(spec["max_rounds"])]
             print(f"=== {task} r{rep} start ===", flush=True)
             started = time.time()
             p = subprocess.run(cmd, capture_output=True, text=True,

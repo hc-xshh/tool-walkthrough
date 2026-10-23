@@ -264,6 +264,44 @@ CASES = [
             )
         },
     },
+    {
+        "task": "L8-payments-idem",
+        "name": "正确修复",
+        "expect": "pass",
+        "files": {
+            "payments/keys.py": ("solution", "L8-payments-idem/keys.py"),
+            "payments/service.py": ("solution", "L8-payments-idem/service.py"),
+        },
+    },
+    {
+        "task": "L8-payments-idem",
+        "name": "原样不动",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L8-payments-idem",
+        "name": "只修了键，没改金额换算",
+        "expect": "failed",
+        "files": {"payments/keys.py": ("solution", "L8-payments-idem/keys.py")},
+    },
+    {
+        "task": "L8-payments-idem",
+        "name": "只修了金额，没修键",
+        "expect": "failed",
+        "files": {"payments/service.py": ("file", "selftest/variants/L8-service-only.py")},
+    },
+    {
+        "task": "L8-payments-idem",
+        "name": "修对了但留了调试语句",
+        "expect": "pass",
+        "usable": False,
+        "files": {
+            "payments/keys.py": ("solution", "L8-payments-idem/keys.py"),
+            "payments/service.py": ("solution", "L8-payments-idem/service.py"),
+            "payments/service_debug.py": ("text", "# TODO: remove before merge\nprint('debug')\n"),
+        },
+    },
 ]
 
 
@@ -316,6 +354,9 @@ def main():
         for case in CASES:
             verdict, result = run_case(case, root)
             ok = verdict == case["expect"]
+            if ok and "usable" in case:
+                usable = bool(((result or {}).get("quality") or {}).get("usable"))
+                ok = usable == case["usable"]
             mark = "PASS" if ok else "FAIL"
             print(f"{mark}  {case['task']:<18} {case['name']:<22} expect={case['expect']:<20} got={verdict}")
             if not ok:
