@@ -252,7 +252,7 @@ def main():
         sys.executable, str(HERE / "grade.py"),
         "--task", a.task, "--workdir", str(workdir), "--before", str(before),
         "--out", a.out, "--rep", str(a.rep), "--tool", a.tool,
-        "--duration", str(ui_elapsed or measured), "--interventions", str(approvals),
+        "--duration", str(measured), "--interventions", str(approvals),
     ]
     g = subprocess.run(grade_cmd, capture_output=True, text=True, encoding="utf-8")
     print((g.stdout or "").strip())

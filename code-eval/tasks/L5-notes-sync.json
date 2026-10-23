@@ -1,0 +1,15 @@
+{
+  "id": "L5-notes-sync",
+  "level": 5,
+  "title": "长任务：增量同步（冲突、墓碑、幂等、事务）",
+  "fixture": "fixtures/L5-notes-sync/repo",
+  "accept": "accept/L5-notes-sync",
+  "prompt": "tasks/L5-notes-sync.prompt.txt",
+  "allowed": ["notes/**"],
+  "forbidden": ["tests/**", "data/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 2400
+}

@@ -13,6 +13,7 @@ LEVEL = {
     "L3-sales-pipeline": "L3",
     "L4-monthly-ledger": "L4",
     "L4b-ledger-ambiguous": "L4 含糊",
+    "L5-notes-sync": "L5",
 }
 
 

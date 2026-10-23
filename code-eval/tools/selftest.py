@@ -175,6 +175,39 @@ CASES = [
             "ledger/load.py": ("file", "selftest/variants/L4-first-wins-load.py"),
         },
     },
+    {
+        "task": "L5-notes-sync",
+        "name": "正确实现",
+        "expect": "pass",
+        "files": {
+            "notes/sync.py": ("solution", "L5-notes-sync/sync.py"),
+            "notes/cli.py": ("solution", "L5-notes-sync/cli.py"),
+        },
+    },
+    {
+        "task": "L5-notes-sync",
+        "name": "原样不动",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L5-notes-sync",
+        "name": "不看墓碑",
+        "expect": "failed",
+        "files": {
+            "notes/sync.py": ("file", "selftest/variants/L5-no-tombstones-sync.py"),
+            "notes/cli.py": ("solution", "L5-notes-sync/cli.py"),
+        },
+    },
+    {
+        "task": "L5-notes-sync",
+        "name": "不校验输入",
+        "expect": "failed",
+        "files": {
+            "notes/sync.py": ("file", "selftest/variants/L5-no-validation-sync.py"),
+            "notes/cli.py": ("solution", "L5-notes-sync/cli.py"),
+        },
+    },
 ]
 
 

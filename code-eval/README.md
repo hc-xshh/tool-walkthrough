@@ -26,7 +26,7 @@ code-eval/
   runs/           本地产物（不在本目录，见仓库根的 .gitignore）
 ```
 
-已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，5 个任务 × 3 次）。
+已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L5 各 3 次）。
 
 ## 口径
 
@@ -41,6 +41,9 @@ code-eval/
 
 「可见测试」是 fixture 自带的测试；它只是地板，不是验收。真正的分在隐藏验收：
 边界值、非法入参、不变量、回归。
+
+**每条隐藏验收必须能对到任务书的一句话**。对不上的，删掉，或者补进任务书——否则判分器会
+制造「假阴性」，看起来是工具不行，其实是题出得不公平（L5 的 `deleted` 计数踩过一次）。
 
 ## 跑一次
 
@@ -88,6 +91,7 @@ python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/�
 | `L3-sales-pipeline` | L3 | 跨模块三处缺陷：half-up 舍入、退款保留、transform 顺序 | 只修舍入，退款和顺序没动 |
 | `L4-monthly-ledger` | L4 | 6 个文件里找三处错：时区归月、周末汇率、重复导出 | 只修时区、去重保留旧值、按 UTC 归月 |
 | `L4b-ledger-ambiguous` | L4 对照 | 同一仓库，只给症状不给规则 | 推断不出「自有时区 / 交易日回溯 / amend 覆盖」就失败 |
+| `L5-notes-sync` | L5 | 长任务：冲突合并、墓碑、幂等、事务、旧账本兼容 | 不看墓碑会复活、不校验输入会写坏账本 |
 
 ## 加一个任务
 

@@ -1,0 +1,19 @@
+项目路径：{workdir}
+
+这个仓库现在只会「feed 里有 upsert 就覆盖」，真正的增量同步没做完。请补完，规则如下：
+
+1. 冲突合并：同一个 id，比较 `(updated_at, revision)`，严格更新才覆盖；否则 `skipped` 加一。
+2. 删除：`op=delete` 要把本地记录删掉，并把 `{id: 删除时间}` 写进 tombstones（`--tombstones` 指定的文件）。
+3. 不复活：收到已删除 id 的 upsert，若 `updated_at` 不晚于墓碑，跳过；严格更新才重新插入，并清掉该墓碑。
+4. 幂等：同一份 feed 重放一次，第二次 `applied` 必须为 0。
+5. 事务：批内任意一条不合法（未知 op、缺 id、`updated_at` 不是合法 ISO 时间、`revision` 不是整数）时抛 `ValueError`，notes 和 tombstones 都保持原样；CLI 打印错误到 stderr 并退出 2。
+6. 兼容：旧的 `notes.json`（纯数组）照常读；`tombstones.json` 不存在时当作空。
+
+约束：
+
+- `stats` 的键保持 `applied` / `skipped` / `deleted`；
+- 不要改 `tests/` 和 `data/`；
+- 公开函数签名不要改：`store.load_notes` / `store.save_notes` / `store.load_tombstones` /
+  `store.save_tombstones` / `sync.apply_batch`。
+
+改完跑 `python -m unittest discover -s tests -v`，并说明你改了哪些文件、每条规则怎么验证。
