@@ -14,6 +14,7 @@ LEVEL = {
     "L4-monthly-ledger": "L4",
     "L4b-ledger-ambiguous": "L4 含糊",
     "L5-notes-sync": "L5",
+    "L6-notes-soft-delete": "L6",
 }
 
 

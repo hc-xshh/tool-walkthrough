@@ -1,0 +1,19 @@
+项目路径：{workdir}
+
+第二轮需求，在上一轮已经改好的代码上继续改，不要推倒重写：
+
+产品决定不再物理删除，改成软删除：
+
+1. `delete` 不再把记录从账本里去掉，而是给它写 `deleted_at`（删除时间）；`tombstones.json` 停用——以后不再往里写。
+2. 已软删的记录，只有 `updated_at` **严格晚于** `deleted_at` 的 upsert 才能复活（复活时去掉 `deleted_at`）；否则跳过。
+3. 迁移：`tombstones.json` 里如果还有旧数据，第一次同步时把对应记录的 `deleted_at` 补上，然后清空这个文件。
+4. `stats.deleted` 表示本次新软删的条数；重复删除同一条不再计数（算 `skipped`）。
+5. 新增子命令：`python -m notes.cli list --store notes.json [--include-deleted]`，把账本以 JSON 数组打到 stdout；默认不包含已软删的记录。
+
+约束：
+
+- 不要改 `tests/` 和 `data/`；
+- `sync.apply_batch` 的签名不变，`sync` 子命令的参数不变；
+- 第一轮的合并规则（时间戳 + revision、旧 upsert 跳过）不能被改坏。
+
+改完跑 `python -m unittest discover -s tests -v`，并说明你改了哪里、软删除和迁移各怎么验证。

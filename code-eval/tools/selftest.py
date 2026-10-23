@@ -208,6 +208,39 @@ CASES = [
             "notes/cli.py": ("solution", "L5-notes-sync/cli.py"),
         },
     },
+    {
+        "task": "L6-notes-soft-delete",
+        "name": "正确实现",
+        "expect": "pass",
+        "files": {
+            "notes/sync.py": ("solution", "L6-notes-soft-delete/sync.py"),
+            "notes/cli.py": ("solution", "L6-notes-soft-delete/cli.py"),
+        },
+    },
+    {
+        "task": "L6-notes-soft-delete",
+        "name": "原样不动",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L6-notes-soft-delete",
+        "name": "第二轮没做（还是物理删除）",
+        "expect": "failed",
+        "files": {
+            "notes/sync.py": ("solution", "L5-notes-sync/sync.py"),
+            "notes/cli.py": ("solution", "L5-notes-sync/cli.py"),
+        },
+    },
+    {
+        "task": "L6-notes-soft-delete",
+        "name": "没做墓碑迁移",
+        "expect": "failed",
+        "files": {
+            "notes/sync.py": ("file", "selftest/variants/L6-no-migration-sync.py"),
+            "notes/cli.py": ("solution", "L6-notes-soft-delete/cli.py"),
+        },
+    },
 ]
 
 

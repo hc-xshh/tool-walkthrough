@@ -26,7 +26,7 @@ code-eval/
   runs/           本地产物（不在本目录，见仓库根的 .gitignore）
 ```
 
-已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L5 各 3 次）。
+已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L6 各 3 次）。
 
 ## 口径
 
@@ -82,7 +82,7 @@ python code-eval/tools/regrade.py --run runs/<run>
 python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
 ```
 
-## 四个档位
+## 任务清单
 
 | 任务 | 档 | 考什么 | 陷阱 |
 |---|---|---|---|
@@ -92,6 +92,10 @@ python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/�
 | `L4-monthly-ledger` | L4 | 6 个文件里找三处错：时区归月、周末汇率、重复导出 | 只修时区、去重保留旧值、按 UTC 归月 |
 | `L4b-ledger-ambiguous` | L4 对照 | 同一仓库，只给症状不给规则 | 推断不出「自有时区 / 交易日回溯 / amend 覆盖」就失败 |
 | `L5-notes-sync` | L5 | 长任务：冲突合并、墓碑、幂等、事务、旧账本兼容 | 不看墓碑会复活、不校验输入会写坏账本 |
+| `L6-notes-soft-delete` | L6 | 多轮：先按 L5 实现同步，再追加一轮把物理删除改成软删除 | 第二轮没做、没迁移旧墓碑、把第一轮规则改坏 |
+
+多轮任务在 spec 里用 `prompts` 数组代替 `prompt`，驱动器在**同一个会话**里依次发送（不新建任务），
+最后统一判分；每轮单独等 idle，上一轮的「任务耗时」不能当完成信号。
 
 ## 加一个任务
 

@@ -10,7 +10,6 @@
 
 import argparse
 import json
-import re
 import subprocess
 import sys
 import time
@@ -22,6 +21,7 @@ REPO = EVAL.parent
 CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--match", "solo-lite"]
 EDITOR = ".chat-input-v2-input-box-editable"
 TMP_JS = HERE / "_drive_tmp.js"
+APPROVE_LABELS = ("本次会话允许", "本次会话", "仅本次运行", "运行", "允许")
 
 
 def cdp(op, arg=None, timeout=90, check=False):
@@ -72,12 +72,16 @@ def editor_info():
 
 
 def editor_rect():
-    """编辑区中心点；被浮层盖住时返回 '__covered__'。"""
+    """编辑区中心点；被浮层盖住时返回 '__covered__'，不在视口内先滚进来。"""
     return js_eval(
         f"""(() => {{
           const el = document.querySelector('{EDITOR}');
           if (!el) return null;
-          const r = el.getBoundingClientRect();
+          let r = el.getBoundingClientRect();
+          if (r.top < 60 || r.bottom > window.innerHeight - 30) {{
+            el.scrollIntoView({{block: 'center'}});
+            r = el.getBoundingClientRect();
+          }}
           if (r.width < 120 || r.height < 16) return null;
           const cx = r.x + r.width / 2, cy = r.y + r.height / 2;
           const hit = document.elementFromPoint(cx, cy);
@@ -91,6 +95,10 @@ def click_editor(log_path, tries=12):
     for _ in range(tries):
         pos = editor_rect()
         if pos == "__covered__":
+            label = pending_approval()
+            if label and click_label(label):
+                time.sleep(1.5)
+                continue
             cdp("key", "Escape")
             time.sleep(0.8)
             continue
@@ -113,18 +121,37 @@ def click_label(label, nth=None):
     return cdp(*cmd, timeout=60).returncode == 0
 
 
+def pending_approval():
+    """当前页面是否有一个可点的授权按钮，返回它的文案。"""
+    labels = json.dumps(list(APPROVE_LABELS), ensure_ascii=False)
+    return js_eval(
+        f"""(() => {{
+          const labels = {labels};
+          const els = Array.from(document.querySelectorAll('button,[role="button"],div,span'))
+            .filter(e => e.offsetParent !== null);
+          for (const label of labels) {{
+            if (els.some(e => (e.innerText || '').trim() === label)) return label;
+          }}
+          return null;
+        }})()"""
+    )
+
+
 def approve(log_path):
-    for label in ("本次会话允许", "仅本次运行"):
-        if click_label(label):
-            log(log_path, "approve", label=label)
-            return True
+    label = pending_approval()
+    if not label:
+        return False
+    if click_label(label):
+        log(log_path, "approve", label=label)
+        return True
     return False
 
 
 def wait_done(log_path, timebox, debug=False, idle_s=45):
-    """完成信号：出现「任务耗时」，或界面 idle_s 秒没有变化。
+    """完成信号：界面 idle_s 秒没有变化。
 
-    不用侧栏的「任务完成」计数：上一轮任务恰好在此刻结束时会误触发。
+    不用「任务耗时」：上一轮结束时的这句话会一直留在页面里，多轮任务会立刻误判。
+    也不用侧栏「任务完成」计数：上一轮收尾时会误触发。
     """
     deadline = time.time() + timebox
     approvals = 0
@@ -138,14 +165,12 @@ def wait_done(log_path, timebox, debug=False, idle_s=45):
             if debug:
                 print("STATE:", tail)
             last, last_change = current, time.time()
-        if "本次会话允许" in current:
-            if approve(log_path):
-                approvals += 1
-                time.sleep(2)
-                continue
-        if "任务耗时" in current and "本次会话允许" not in current:
-            log(log_path, "done", approvals=approvals, marker="elapsed")
-            return True, approvals, last_change
+        label = pending_approval()
+        if label and click_label(label):
+            approvals += 1
+            log(log_path, "approve", label=label)
+            time.sleep(2)
+            continue
         if time.time() - last_change > idle_s:
             log(log_path, "done", approvals=approvals, marker=f"idle{idle_s}")
             return True, approvals, last_change
@@ -173,9 +198,11 @@ def main():
 
     workdir = Path(a.workdir).resolve()
     spec = json.loads((EVAL / "tasks" / f"{a.task}.json").read_text(encoding="utf-8"))
-    prompt = (EVAL / spec["prompt"]).read_text(encoding="utf-8").replace(
-        "{workdir}", str(workdir)
-    )
+    prompt_files = spec.get("prompts") or [spec["prompt"]]
+    prompts = [
+        (EVAL / rel).read_text(encoding="utf-8").replace("{workdir}", str(workdir))
+        for rel in prompt_files
+    ]
 
     log_path = Path(a.out).parent / (Path(a.out).stem + ".trace.jsonl")
     log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -194,55 +221,74 @@ def main():
     before = Path(a.before) if a.before else workdir.parent / (workdir.name + ".before.json")
 
     if a.dry_run:
-        print(prompt)
+        for index, text in enumerate(prompts, 1):
+            print(f"--- round {index} ---")
+            print(text)
         return 0
 
-    log(log_path, "start", task=a.task, rep=a.rep, workdir=str(workdir))
+    log(log_path, "start", task=a.task, rep=a.rep, workdir=str(workdir), rounds=len(prompts))
     click_label("新建任务")
     time.sleep(2)
 
-    if not click_editor(log_path):
-        raise SystemExit("editor not clickable (covered or missing)")
-    clear_editor()
-    state = editor_info()
-    if not state or state["len"] > 1:  # 空编辑区是一个换行
-        raise SystemExit(f"editor not empty before typing: {state}")
+    approvals = 0
+    started = time.time()
+    last_change = started
+    ok = True
 
-    cdp("type", prompt, check=True)
-    time.sleep(0.6)
-    state = editor_info()
-    if not state or state["len"] < 80:
-        # 有时第一次插入落在错误焦点上，重试一次
+    for index, prompt in enumerate(prompts, 1):
+        if index > 1:
+            log(log_path, "round", round=index)
+            time.sleep(2)
         if not click_editor(log_path):
-            raise SystemExit("editor lost before retry")
+            raise SystemExit(f"editor not clickable at round {index}")
         clear_editor()
+        state = editor_info()
+        if not state or state["len"] > 1:  # 空编辑区是一个换行
+            raise SystemExit(f"editor not empty before typing (round {index}): {state}")
+
         cdp("type", prompt, check=True)
         time.sleep(0.6)
         state = editor_info()
-    if not state or state["len"] < 80:
-        raise SystemExit(f"prompt not inserted: {state}")
-    log(log_path, "typed", chars=state["len"])
+        if not state or state["len"] < 80:
+            # 有时第一次插入落在错误焦点上，重试一次
+            if not click_editor(log_path):
+                raise SystemExit("editor lost before retry")
+            clear_editor()
+            cdp("type", prompt, check=True)
+            time.sleep(0.6)
+            state = editor_info()
+        if not state or state["len"] < 80:
+            raise SystemExit(f"prompt not inserted (round {index}): {state}")
+        log(log_path, "typed", round=index, chars=state["len"])
 
-    cdp("key", "Enter", check=True)
-    started = time.time()
-    time.sleep(1.5)
-    after = editor_info()
-    if after and after["len"] >= 80 and state["len"] >= 80 and after["text"] == state["text"]:
-        # 回车没提交：试发送按钮
-        for label in ("发送", "Send"):
-            if click_label(label):
-                log(log_path, "send-button", label=label)
-                break
-    log(log_path, "submit")
+        cdp("key", "Enter", check=True)
+        if index == 1:
+            started = time.time()
+        time.sleep(1.5)
+        after = editor_info()
+        if after and after["len"] >= 80 and after["text"] == state["text"]:
+            # 回车没提交：试发送按钮
+            for label in ("发送", "Send"):
+                if click_label(label):
+                    log(log_path, "send-button", label=label)
+                    break
+        log(log_path, "submit", round=index)
 
-    ok, approvals, last_change = wait_done(
-        log_path, a.timebox, a.debug, a.idle
-    )
+        round_ok, round_approvals, last_change = wait_done(
+            log_path, a.timebox, a.debug, a.idle
+        )
+        approvals += round_approvals
+        ok = ok and round_ok
+        log(
+            log_path,
+            "round-done",
+            round=index,
+            finished=round_ok,
+            approvals=round_approvals,
+        )
+
     took = round(time.time() - started, 1)
     measured = round(last_change - started, 1) if last_change else took
-    text = page_text()
-    m = [int(x) for x in re.findall(r"任务耗时\s*(\d+)", text)]
-    ui_elapsed = m[-1] if m else None
     try:
         cdp("shot", str(Path(a.out).with_suffix(".png")))
     except Exception:
@@ -259,7 +305,7 @@ def main():
     if g.returncode != 0 and "result ->" not in (g.stdout or ""):
         print((g.stderr or "")[-800:], file=sys.stderr)
     log(log_path, "graded", finished=ok, approvals=approvals,
-        wall_s=took, measured_s=measured, ui_elapsed=ui_elapsed)
+        wall_s=took, measured_s=measured, rounds=len(prompts))
     return 0
 
 

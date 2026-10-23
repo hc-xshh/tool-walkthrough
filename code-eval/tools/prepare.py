@@ -78,7 +78,10 @@ def main():
                 "level": spec.get("level"),
                 "fixture": str(src),
                 "baseline": baseline,
-                "prompt": str(EVAL_ROOT / spec["prompt"]),
+                "prompts": [
+                    str(EVAL_ROOT / rel)
+                    for rel in (spec.get("prompts") or [spec["prompt"]])
+                ],
             },
             ensure_ascii=False,
             indent=2,
