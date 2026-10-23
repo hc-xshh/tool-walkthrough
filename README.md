@@ -4,8 +4,8 @@
 
 当前方法版本：**v5**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
 
-> 回答的不是「界面好不好看」，而是一个决策问题：**这个版本能不能上、能不能推给团队、上线前先修哪三件。**
-> n=1 是探索性观察，不外推；报告是决策材料，不是过程记录。
+> 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
+> n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
 
 ## 包里有什么
 
@@ -16,7 +16,7 @@
 | `templates/ui-map.md` | 页面地图模板（控件清单 + 归属任务 / 不测原因） |
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 覆盖控件 / 结果 / 证据） |
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
-| `templates/report.md` | 七节报告模板（图随发现） |
+| `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
 | `code-eval/` | 编码能力判分（实验）：L1–L4 四个任务 + 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器。方法文档等真实数据出来再定稿 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
@@ -137,7 +137,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 64 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 67 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 用例在临时目录里造"假 run"，只改一处再断言工具的反应；改判据时先跑一遍，别让"拦住偷懒"的检查在重构里悄悄失效（`tests/README.md`）。
@@ -168,11 +168,11 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 
 ## 方法要点
 
-1. **先定决策问题**：谁读、要做什么决定、这次不回答什么。
+1. **先定评测范围**：覆盖哪些能力域 / 界面 / 任务类型，哪类问题在范围内，哪些不在（及原因）。
 2. **任务驱动，不按菜单逛**：8–15 个用户任务（从页面地图派生，每屏至少一条），覆盖首启、核心任务、产物取回、失败态、连续任务、设置。
-3. **每条发现四件事**：具体元素 + 导致的后果 + 证据 + 建议；不写「用户找不到」。
+3. **每条问题四件事**：具体元素 + 导致的后果 + 证据 + 建议；再加**影响面、最小复现、置信度**。不写「用户找不到」。
 4. **0–4 严重度**：4 阻断 / 3 严重 / 2 轻微 / 1 观感 / 0 不是问题；S3/S4 必须人工复核，n=1 不写成功率。
-5. **报告先给前三**，另有「做对了什么」，防止团队把没坏的部分一起改。
+5. **报告先给问题总览**（按严重度 × 置信度分布 + 最该先处理的 3 条），另有「已验证正常的行为」，防止团队把没坏的部分一起改。
 
 ## 边界（写进交付，不要省）
 
@@ -185,6 +185,6 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 
 ## 来源与许可
 
-- 方法参考 NN/g 的严重度与可执行发现、Maze / DHS 的报告结构、Builders Camp 的「前三 + 做对了什么 + backlog」，出处见 `METHOD.md` 第 13 节。
+- 方法参考 NN/g 的严重度与可执行发现、Maze / DHS 的报告结构、Builders Camp 的「前三 + backlog」，出处见 `METHOD.md` 第 13 节。
 - `walkthrough-harness/` 只借鉴 Google Harness²（Apache-2.0）的组件划分，未复制其代码，也不跑其 benchmark。
 - 本包以 MIT 许可发布，见 [`LICENSE`](LICENSE)。

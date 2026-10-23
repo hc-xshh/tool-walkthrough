@@ -30,7 +30,8 @@ class AuditTest(unittest.TestCase):
         self.assertEqual(code, 0, out)
         for name in ("report.md", "report image refs", "shot files",
                      "error events", "click -> shot", "harness.json",
-                     "task count", "ui coverage", "finding attribution"):
+                     "task count", "ui coverage", "finding attribution",
+                     "problem summary"):
             self.assertEqual(self.status(out, name), "PASS", f"{name}\n{out}")
 
     # -- template placeholders --------------------------------------------
@@ -108,6 +109,19 @@ class AuditTest(unittest.TestCase):
         support.make_run(self.dir, screenshots=("S1-工作台.png", "S2-插件市场.png"))
         _, out = support.audit_output(self.dir)
         self.assertEqual(self.status(out, "finding attribution"), "PASS", out)
+
+    def test_finding_without_confidence_is_a_warn(self):
+        text = support.report(findings=1, with_confidence=False)
+        support.make_run(self.dir, report_text=text, screenshots=("S1-工作台.png", "S2-插件市场.png"))
+        _, out = support.audit_output(self.dir)
+        self.assertEqual(self.status(out, "finding attribution"), "WARN", out)
+        self.assertIn("置信度", out)
+
+    def test_report_without_problem_summary_is_a_warn(self):
+        text = support.report(findings=1, with_summary=False)
+        support.make_run(self.dir, report_text=text, screenshots=("S1-工作台.png", "S2-插件市场.png"))
+        _, out = support.audit_output(self.dir)
+        self.assertEqual(self.status(out, "problem summary"), "WARN", out)
 
     # -- missing deliverables ---------------------------------------------
     def test_missing_report_fails(self):

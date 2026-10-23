@@ -39,15 +39,26 @@ def plan(tasks=8, results=("Pass",)):
     return "# 任务计划\n\n" + PLAN_HEADER + "\n".join(rows) + "\n"
 
 
-def report(findings=1, refs=("screens/S1-工作台.png",), with_fields=True):
+def report(findings=1, refs=("screens/S1-工作台.png",), with_fields=True,
+           with_confidence=True, with_summary=True):
     """A report with `findings` finding blocks and image refs."""
-    out = ["# 报告\n", "## 4. 发现\n"]
+    out = ["# 报告\n"]
+    if with_summary:
+        out.append("## 1. 问题总览\n")
+        out.append("| 严重度 | 条数 | 已复核 | 单次 | 推断 |")
+        out.append("|---|---|---|---|---|")
+        out.append("| S2 | 1 | 1 | 0 | 0 |\n")
+    out.append("## 4. 问题清单\n")
     for i, ref in enumerate(refs[:findings] if findings else [], start=1):
         out.append(f"### 4.{i} · S2 · 第 {i} 条发现\n")
         out.append("用户看到了一段行为描述。\n")
         out.append(f"![图注]({ref})\n")
         if with_fields:
-            out.append("**归因**：产品 · **复现**：2 次以上\n")
+            line = "**归因**：产品 · **复现**：2 次以上"
+            if with_confidence:
+                line += " · **置信度**：已复核"
+            out.append(line + "\n")
+            out.append("**最小复现**：1. 打开工作台 → 2. 点输入框 → 3. 发送后卡住\n")
         out.append(f"**证据**：`{ref}` · **复核**：待人工复核\n")
     return "\n".join(out)
 

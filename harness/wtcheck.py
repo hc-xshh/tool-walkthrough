@@ -315,24 +315,30 @@ def count_planned_tasks(plan_path):
 
 
 def finding_issue_list(text):
-    """Findings must state 归因 (product/script/env) and 复现 count.
+    """Findings must state 归因, 复现, 置信度 and 最小复现.
 
     Reports title findings either as `### 4.1 · S2 · ...` or `#### W-01 ...`,
-    so count finding-like headings and compare with the two fields.
+    so count finding-like headings and compare with the four fields.
     """
     titles = re.findall(r"^#{3,4}\s+(.+)$", text, flags=re.M)
-    findings = [t for t in titles if re.search(r"·\s*S[1-4]\b|^\s*W-\d+", t)]
+    # `### 4.2 · S3 · 标题` counts; `### 4.3 · S2 / S1（backlog）` does not
+    findings = [t for t in titles if re.search(r"·\s*S[1-4]\s*·|^\s*W-\d+", t)]
     n = len(findings)
     if not n:
         return []
     missing = []
-    got_attr = len(re.findall(r"\*\*归因\*\*", text))
-    got_repro = len(re.findall(r"\*\*复现\*\*", text))
-    if got_attr < n:
-        missing.append(f"{n - got_attr} of {n} findings lack 归因")
-    if got_repro < n:
-        missing.append(f"{n - got_repro} of {n} findings lack 复现")
+    for field in ("归因", "复现", "置信度", "最小复现"):
+        got = len(re.findall(rf"\*\*{field}\*\*", text))
+        if got < n:
+            missing.append(f"{n - got} of {n} findings lack {field}")
     return missing
+
+
+def problem_summary_issue(text):
+    """The report must open with a 问题总览 section: severity x confidence."""
+    if re.search(r"^##\s*(?:\d+\.\s*)?问题总览", text, flags=re.M):
+        return []
+    return ["no 问题总览 section"]
 
 
 
@@ -465,9 +471,15 @@ def cmd_audit(a):
         checks.append((
             "finding attribution",
             "PASS" if not missing_fields else "WARN",
-            "every finding states 归因/复现"
+            "every finding states 归因/复现/置信度/最小复现"
             if not missing_fields
             else f"{len(missing_fields)} missing: {missing_fields[0]}",
+        ))
+        summary_issues = problem_summary_issue(text)
+        checks.append((
+            "problem summary",
+            "PASS" if not summary_issues else "WARN",
+            "问题总览 present" if not summary_issues else summary_issues[0],
         ))
 
     print(f"audit {run}")
