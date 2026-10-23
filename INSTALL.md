@@ -6,6 +6,8 @@ Linux 已实测（Ubuntu 22.04 / 24.04 / 26.04）；macOS 与 Windows 的 `wt.py
 
 `git` 不只是用来推代码：`harness/new-run.sh` 用 `git rev-parse` 找仓根，提交钩子、`runs/` 忽略规则和 `code-eval` 的改动 diff 都依赖它。装好 Git for Windows 后 `preflight` 仍报 missing 的，重开终端或重启应用——父进程的环境变量是旧的；`find_git()` 也会直接查 `C:\Program Files\Git\cmd\git.exe`，还可以用 `WALKTHROUGH_GIT` 指定。
 
+**走查时不想被抢鼠标键盘**：`export WALKTHROUGH_NO_NATIVE_INPUT=1`。它只关掉 `wt.py click`（那条命令会移动物理指针），CDP 驱动、截图、OCR 都不受影响；`preflight` 会打印当前模式。原生弹窗必须点时，用隔离桌面 / 虚拟机 / 独立用户。
+
 ## 1. Linux（Ubuntu / Debian）
 
 **默认在真实桌面跑。** 全量走查要覆盖原生文件选择器、系统通知、桌面宠物、电脑操控，这些必须在真实会话验证；Xvfb 只用于 CI / 无人值守冒烟。

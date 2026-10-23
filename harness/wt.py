@@ -127,6 +127,12 @@ def cmd_preflight(a):
         "git" if git_ok else "git:unavailable",
     ]
     print(f"{'capabilities':<24} {'INFO':<5} {', '.join(caps)}")
+    native_ok = os.environ.get("WALKTHROUGH_NO_NATIVE_INPUT") != "1"
+    print(
+        f"{'native input':<24} {'INFO':<5} "
+        + ("enabled: wt.py click moves the real pointer; prefer cdp.py"
+           if native_ok else "disabled: cdp.py only, the pointer stays yours")
+    )
     if lock and lock.get("wt_version") and lock["wt_version"] != WT_VERSION:
         say("lock version", False, f"lock={lock['wt_version']} wt={WT_VERSION}", warn_only=True)
     return 1 if rc else 0
@@ -217,6 +223,18 @@ class _ShotArgs:
 
 
 def cmd_click(a):
+    # 原生点击会移动用户的物理鼠标（Windows: SetCursorPos + mouse_event；
+    # macOS: cliclick/osascript；Linux: xdotool）。想完全不碰用户的输入设备，
+    # 就在这个开关下改用 cdp.py，或者把整轮走查放进隔离桌面。
+    if getattr(a, "no_native_input", False) or os.environ.get("WALKTHROUGH_NO_NATIVE_INPUT") == "1":
+        print(
+            "native click disabled: it would move the physical pointer. "
+            "Use `python3 harness/cdp.py clickel \"<label>\"` (DOM/mouse events inside the app) "
+            "or run the walkthrough in an isolated desktop.",
+            file=sys.stderr,
+        )
+        raise SystemExit(2)
+
     prof = profile(a)
     disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
     x, y = float(a.x), float(a.y)
@@ -414,6 +432,8 @@ def main():
     p.add_argument("--capture", default=None, help="screenshot path to write right after clicking")
     p.add_argument("--no-capture", action="store_true",
                    help="do not screenshot after the click (audit will flag the click as unpaired)")
+    p.add_argument("--no-native-input", action="store_true",
+                   help="refuse to move the physical pointer; use cdp.py instead")
     p.set_defaults(func=cmd_click)
 
     p = sub.add_parser("ocr", help="OCR an image and print words with boxes")

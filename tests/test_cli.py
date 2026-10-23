@@ -1,4 +1,5 @@
 """The CLI itself: every subcommand starts, exit codes follow the docs."""
+import os
 import pathlib
 import subprocess
 import sys
@@ -75,6 +76,32 @@ class CliTest(unittest.TestCase):
         """git is a declared dependency: it must show up as PASS or WARN, not vanish."""
         res = run("preflight")
         self.assertRegex(res.stdout, r"(?m)^git\s+(PASS|WARN)")
+
+    def test_native_click_can_be_disabled(self):
+        """--no-native-input must refuse before touching the pointer."""
+        res = run("click", "1", "2", "--no-native-input")
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("cdp.py", res.stderr)
+
+    def test_env_also_disables_native_click(self):
+        env = dict(os.environ, WALKTHROUGH_NO_NATIVE_INPUT="1")
+        res = subprocess.run(
+            [sys.executable, str(WT), "click", "1", "2"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(support.ROOT), env=env,
+        )
+        self.assertEqual(res.returncode, 2, res.stdout)
+        self.assertIn("native click disabled", res.stderr)
+
+    def test_preflight_shows_the_input_mode(self):
+        env = dict(os.environ, WALKTHROUGH_NO_NATIVE_INPUT="1")
+        res = subprocess.run(
+            [sys.executable, str(WT), "preflight"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(support.ROOT), env=env,
+        )
+        self.assertIn("native input", res.stdout)
+        self.assertIn("disabled", res.stdout)
 
 
 if __name__ == "__main__":

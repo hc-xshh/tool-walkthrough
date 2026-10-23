@@ -18,7 +18,8 @@
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
-| `code-eval/` | 编码能力判分（实验）：L1–L4 四个任务 + 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器。方法文档等真实数据出来再定稿 |
+| `code-eval/` | 编码能力判分（实验）：L1–L7 七个任务 + 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器 |
+| `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
 ## 不包含什么
@@ -137,7 +138,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 67 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 70 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 用例在临时目录里造"假 run"，只改一处再断言工具的反应；改判据时先跑一遍，别让"拦住偷懒"的检查在重构里悄悄失效（`tests/README.md`）。
@@ -159,6 +160,14 @@ python3 -m unittest discover -s tests -v     # 67 个用例，覆盖 coverage / 
 | Git 钩子 | bash | bash | Git Bash |
 
 macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；Windows 需要在交互式桌面会话里跑，服务账号的 session 0 截不到界面。
+
+### 不抢键盘鼠标
+
+- **`wt.py click` 会移动你的物理指针**（Windows `SetCursorPos` + `mouse_event`，macOS `cliclick`，Linux `xdotool`）。这是唯一会抢输入的命令。
+- `harness/cdp.py` 的 `clickel` / `clicktext` / `clickxy` / `type` / `key` 走 DevTools 协议，只作用于应用内页面，**不碰系统输入，也不需要窗口在前台**。
+- 截图、OCR、`launch`、`report` 都不注入输入。
+- 完全不想被碰：`export WALKTHROUGH_NO_NATIVE_INPUT=1`（或给单次调用加 `--no-native-input`），`click` 会直接拒绝并提示改用 `cdp.py`；`preflight` 会打印当前模式。
+- 必须点原生弹窗（文件选择器、系统授权）时，把整轮走查放进隔离桌面 / 虚拟机 / 独立用户，那一轮里随便动。
 
 ## 适配点
 

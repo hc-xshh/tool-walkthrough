@@ -3,7 +3,7 @@
 检查项自己的回归测试。标准库 `unittest`，不需要装任何东西：
 
 ```bash
-python -m unittest discover -s tests -v     # 67 个用例，约 3 秒
+python -m unittest discover -s tests -v     # 70 个用例，约 3 秒
 python -m pytest tests -q                   # 装了 pytest 也能跑
 ```
 

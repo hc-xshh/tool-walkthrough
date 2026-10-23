@@ -1,0 +1,15 @@
+{
+  "id": "L7-billing-export",
+  "level": 7,
+  "title": "大仓库：128 个文件里定位导出器",
+  "fixture": "fixtures/L7-billing-export/repo",
+  "accept": "accept/L7-billing-export",
+  "prompt": "tasks/L7-billing-export.prompt.txt",
+  "allowed": ["app/**"],
+  "forbidden": ["tests/**", "data/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 1800
+}

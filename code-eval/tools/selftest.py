@@ -241,6 +241,29 @@ CASES = [
             "notes/cli.py": ("solution", "L6-notes-soft-delete/cli.py"),
         },
     },
+    {
+        "task": "L7-billing-export",
+        "name": "正确修复",
+        "expect": "pass",
+        "files": {"app/exporters/csv.py": ("solution", "L7-billing-export/csv.py")},
+    },
+    {
+        "task": "L7-billing-export",
+        "name": "原样不动",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L7-billing-export",
+        "name": "改错文件（旧版导出器）",
+        "expect": "failed",
+        "files": {
+            "app/legacy/export_v2.py": (
+                "text",
+                '"""旧版导出器。"""\n\n\ndef export(orders, path):\n    with open(path, "w", encoding="utf-8") as fh:\n        for o in orders:\n            fh.write(f"{o[\'id\']},{o[\'amount\']}\\n")\n',
+            )
+        },
+    },
 ]
 
 

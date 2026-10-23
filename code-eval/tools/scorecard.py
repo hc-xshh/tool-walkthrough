@@ -15,6 +15,7 @@ LEVEL = {
     "L4b-ledger-ambiguous": "L4 含糊",
     "L5-notes-sync": "L5",
     "L6-notes-soft-delete": "L6",
+    "L7-billing-export": "L7",
 }
 
 

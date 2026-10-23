@@ -1,0 +1,11 @@
+{
+  "id": "O1-xlsx-quarterly",
+  "level": "office-1",
+  "title": "xlsx：季度销售汇总（两个 sheet、环比、合计）",
+  "fixture": "fixtures/O1-xlsx-quarterly/repo",
+  "accept": "accept/O1-xlsx-quarterly",
+  "prompt": "tasks/O1-xlsx-quarterly.prompt.txt",
+  "allowed": ["out/**"],
+  "forbidden": ["data/**", "spec.md"],
+  "timebox_s": 1800
+}

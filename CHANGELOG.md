@@ -2,6 +2,12 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v5.4 — 2026-10-23（不抢输入 + 两条新轴）
+
+- **走查可以不抢用户的鼠标键盘**：新增 `WALKTHROUGH_NO_NATIVE_INPUT=1`（或单次 `click --no-native-input`），`wt.py click` 会直接拒绝并提示改用 `cdp.py`；`preflight` 打印当前模式。除了 `click`（Windows `SetCursorPos` / macOS `cliclick` / Linux `xdotool`），截图、OCR、`launch`、CDP 驱动的点击与输入都不注入系统输入。README / INSTALL / METHOD 各补了一段。
+- **L7 大仓库**：新增 `make_large_fixture.py` 生成 128 个 Python 文件的账单服务，真实 bug 在一个导出器里，另外两个旧版导出器做诱饵；隐藏验收覆盖作废单保留、列顺序、金额格式与行序。
+- **`office-eval/`**：办公产物判分（实验）。O1 任务从 CSV 生成 xlsx（两个 sheet、环比 %、合计行），9 条 openpyxl 隐藏验收；`tools/grade.py` 检查禁区并跑验收，`tools/selftest.py` 用参考产物 + 3 个错误变体验证口径（5/5）。docx 任务待加。
+
 ## v5.3 — 2026-10-23（定位调整：决策材料 → 问题清单）
 
 - **报告的骨架从「决策摘要 + 前三问题」换成「问题总览 + 全量问题清单」**：删掉「建议动作（上线 / 整改后上线 / 试点）」和「决策问题」字段，改成「评测范围 / 不在范围」；「前三问题」降为总览里的一个排序视图。理由：决策框架要求前三条展开、其余压成一句话，第 4 条起复现细节就丢了，而这正是「发现问题」最需要的内容。
