@@ -76,7 +76,7 @@ python code-eval/tools/regrade.py --run runs/<run>
 整套自测（不需要被测工具）：
 
 ```bash
-python code-eval/tools/selftest.py     # 11 个假 agent 用例，覆盖正确/偷懒/越界
+python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
 ```
 
 ## 四个档位

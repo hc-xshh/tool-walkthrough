@@ -6,7 +6,7 @@
 
 - **`preflight` 检查 git**：读 `harness.lock` 的 `git_min`（默认 2.20），capabilities 行输出 `git` / `git:unavailable`；`harness/preflight.sh` 的 host dependencies 也算 git。
 - **`find_git()` 先找安装位置、再看 PATH**：Windows 装完 Git 后，长驻的父进程环境还是旧的，只查 PATH 会误报 missing；常见路径（`C:\Program Files\Git\cmd`、Homebrew、`/usr/local/bin`）都会被找到，也可以用 `WALKTHROUGH_GIT` 指定。`git` 仍是 WARN 级——没有它，界面走查照跑，`new-run.sh`、钩子和后面的改动判分才需要。
-- **新增 `code-eval/`（实验）**：三个难度档的任务（单文件修 bug / 多文件加功能 / 跨模块排错）、每个任务一份不进 agent 上下文的隐藏验收、`prepare → 改动 → grade` 判分链路（用 git baseline + `git diff` 取改动，快照兜底）、TRAE Agent 的 CDP 驱动器、批量跑与记分卡。`tools/selftest.py` 用假 agent 验证口径：正确解通过、只讨好可见用例的不通过、改 `tests/**` 判 `scope_violation`。
+- **新增 `code-eval/`（实验）**：四个难度档的任务（单文件修 bug / 多文件加功能 / 跨模块排错 / 六文件时区与汇率排错）+ 一个只给症状不给规则的对照、每个任务一份不进 agent 上下文的隐藏验收、`prepare → 改动 → grade` 判分链路（用 git baseline + `git diff` 取改动，快照兜底）、TRAE Agent 的 CDP 驱动器、批量跑与记分卡。`tools/selftest.py` 用 15 个假 agent 用例验证口径：正确解通过、只讨好可见用例的不通过、改 `tests/**` 判 `scope_violation`、只修一半的不通过。
 
 ## v5 — 2026-10-22
 
