@@ -6,3 +6,4 @@ runs/
 *.pyc
 debug.log
 .dsh-office-*
+.selftest-tmp/

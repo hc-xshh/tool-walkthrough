@@ -14,6 +14,7 @@
 import argparse
 import fnmatch
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -28,7 +29,7 @@ sys.path.insert(0, str(HERE))
 import snap  # noqa: E402
 
 
-def run_cmd(cmd, cwd, timeout):
+def run_cmd(cmd, cwd, timeout, env=None):
     started = time.time()
     try:
         p = subprocess.run(
@@ -39,6 +40,7 @@ def run_cmd(cmd, cwd, timeout):
             encoding="utf-8",
             errors="replace",
             timeout=timeout,
+            env=env,
         )
         return {
             "cmd": cmd,
@@ -103,6 +105,28 @@ def quality_checks(spec, changes, patch, verdict):
     }
 
 
+def pytest_payload(output, seconds=0.0):
+    """把 pytest -q 的输出折成和 accept_run.py 一样的 JSON。"""
+    clean = re.sub(r"\x1b\[[0-9;]*m", "", output)
+    passed = int(m.group(1)) if (m := re.search(r"(\d+) passed", clean)) else 0
+    failed = int(m.group(1)) if (m := re.search(r"(\d+) failed", clean)) else 0
+    errors = int(m.group(1)) if (m := re.search(r"(\d+) error", clean)) else 0
+    failures = [
+        {"test": line[len("FAILED "):].strip(), "status": "fail", "message": line[:400]}
+        for line in clean.splitlines()
+        if line.startswith("FAILED ")
+    ]
+    if not failures and (errors or failed):
+        failures = [{"test": "<pytest>", "status": "error",
+                     "message": clean.strip().splitlines()[-1][:400] if clean.strip() else ""}]
+    return {
+        "total": passed + failed + errors,
+        "passed": passed,
+        "failures": failures,
+        "seconds": seconds,
+    }
+
+
 def scope_check(changes, spec):
     forbidden = spec.get("forbidden", [])
     allowed = spec.get("allowed", ["**"])
@@ -155,9 +179,18 @@ def main():
     result["scope"] = scope_check(changes, spec)
 
     visible = spec.get("visible")
+    py = os.environ.get("CODE_EVAL_PYTHON") or sys.executable
+    env = dict(os.environ)
+    # 判分子进程的临时目录放进本轮目录：宿主的 %TEMP% 在沙箱里未必可写，
+    # 验收测试里的 TemporaryDirectory 会直接报 "No usable temporary directory"。
+    scratch = workdir.parent / ".eval-tmp"
+    scratch.mkdir(parents=True, exist_ok=True)
+    env["TEMP"] = env["TMP"] = env["TMPDIR"] = str(scratch)
+    if spec.get("pythonpath"):
+        env["PYTHONPATH"] = str(workdir / spec["pythonpath"]) + os.pathsep + env.get("PYTHONPATH", "")
     if visible:
-        cmd = [sys.executable if c == "{python}" else c for c in visible["cmd"]]
-        result["visible"] = run_cmd(cmd, workdir, visible.get("timeout", 180))
+        cmd = [py if c == "{python}" else c for c in visible["cmd"]]
+        result["visible"] = run_cmd(cmd, workdir, visible.get("timeout", 180), env=env)
     else:
         result["visible"] = None
 
@@ -168,21 +201,33 @@ def main():
         if accept_dst.exists():
             shutil.rmtree(accept_dst)
         shutil.copytree(accept_src, accept_dst)
-        probe = run_cmd(
-            [sys.executable, str(HERE / "accept_run.py"), "_accept"],
-            workdir,
-            a.accept_timeout,
-        )
-        try:
-            accept_payload = json.loads(probe["stdout"].strip().splitlines()[-1])
-        except (ValueError, IndexError):
-            accept_payload = {
-                "total": 0,
-                "passed": 0,
-                "failures": [{"test": "<probe>", "status": "error",
-                              "message": (probe["stderr"] or probe["stdout"])[-800:]}],
-            }
-        accept_payload["seconds"] = probe["seconds"]
+        if spec.get("runner") == "pytest":
+            probe = run_cmd(
+                [py, "-m", "pytest", "-q", "-o", "addopts=", "-o", "filterwarnings=", "_accept"],
+                workdir,
+                a.accept_timeout,
+                env=env,
+            )
+            accept_payload = pytest_payload(
+                (probe["stdout"] or "") + "\n" + (probe["stderr"] or ""), probe["seconds"]
+            )
+        else:
+            probe = run_cmd(
+                [py, str(HERE / "accept_run.py"), "_accept"],
+                workdir,
+                a.accept_timeout,
+                env=env,
+            )
+            try:
+                accept_payload = json.loads(probe["stdout"].strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                accept_payload = {
+                    "total": 0,
+                    "passed": 0,
+                    "failures": [{"test": "<probe>", "status": "error",
+                                  "message": (probe["stderr"] or probe["stdout"])[-800:]}],
+                }
+            accept_payload["seconds"] = probe["seconds"]
     finally:
         shutil.rmtree(accept_dst, ignore_errors=True)
 

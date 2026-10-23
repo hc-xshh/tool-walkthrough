@@ -18,7 +18,7 @@
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
-| `code-eval/` | 编码能力判分（实验）：L1–L8 八个任务 + 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器 |
+| `code-eval/` | 编码能力判分（实验）：L1–L9 九个任务（含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器 |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 

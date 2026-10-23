@@ -2,6 +2,13 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v5.6 — 2026-10-23（真实开源仓库）
+
+- **L9-humanize-intword**：拿 [humanize](https://github.com/python-humanize/humanize)（MIT）修复提交 `ca892b3` 的父提交做 fixture，隐藏验收用上游自己的回归测试 `test_intword_rounding_rollover`，题面只给症状（`10**24-1` 渲染成 `1000.0 sextillion`）。这是第一个「代码不是我写的、bug 不是我埋的、测试不是我写的」任务。
+- **pytest 支持**：spec 新增 `"runner": "pytest"` 与 `"pythonpath": "src"`；`grade.py` 用 `CODE_EVAL_PYTHON` 指定的解释器跑验收，输出折成和 `accept_run.py` 一样的 JSON。
+- **判分沙箱化**：判分子进程的 `TEMP/TMP/TMPDIR` 指到本轮目录下的 `.eval-tmp`；`selftest` 的临时根也从系统 temp 挪到 `code-eval/.selftest-tmp`。宿主 temp 在 workspace-write 沙箱里不可写时，验收里的 `TemporaryDirectory` 会直接报「No usable temporary directory」。
+- 真实数据：L9 三次都是第 1 轮过，改 5–10 行（上游修复是 8 行）；耗时 94–292 秒，第一次跑了整仓测试。
+
 ## v5.5 — 2026-10-23（场景 3：存量工程 + 两个新指标）
 
 - **L8-payments-idem**：一个多模块支付仓库，三处必须一起改的 bug——幂等键带了时间戳、金额换算用 `int()` 截断、超时重试换了新键。6 条隐藏验收覆盖重复请求、超时重试、金额 half-up、重放一致性；只修一处的变体判失败。

@@ -107,9 +107,20 @@ python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/�
 | `L6-notes-soft-delete` | L6 | 多轮：先按 L5 实现同步，再追加一轮把物理删除改成软删除 | 第二轮没做、没迁移旧墓碑、把第一轮规则改坏 |
 | `L7-billing-export` | L7 | 128 个文件里定位真正的导出器，作废单不能丢 | 改旧版导出器、只保留列不加标记、金额格式错 |
 | `L8-payments-idem` | L8 | 存量工程：幂等键、金额换算、超时重试三处必须一起改 | 只修一处、换键重试、int 截断金额 |
+| `L9-humanize-intword` | L9 | 真实仓库（humanize）+ 上游真实回归测试 | 浮点比较残留、只改 `%.0f` 分支 |
 
 多轮任务在 spec 里用 `prompts` 数组代替 `prompt`，驱动器在**同一个会话**里依次发送（不新建任务），
 最后统一判分；每轮单独等 idle，上一轮的「任务耗时」不能当完成信号。
+
+**真实仓库任务**（`L9`）来自开源项目 [humanize](https://github.com/python-humanize/humanize)（MIT），
+fixture 是修复提交 `ca892b3` 的父提交，隐藏验收是上游的 `test_intword_rounding_rollover`。
+这类任务在 spec 里写 `"runner": "pytest"` 和 `"pythonpath": "src"`：验收用 pytest 跑，
+`CODE_EVAL_PYTHON` 指向装了 pytest 的解释器（系统 Python 一般没有）：
+
+```bash
+export CODE_EVAL_PYTHON=/path/to/venv/bin/python
+python tools/drive_trae.py --task L9-humanize-intword ... 
+```
 
 ## 加一个任务
 

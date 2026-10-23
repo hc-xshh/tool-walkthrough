@@ -70,11 +70,19 @@ def l3_partial():
     return text.replace(old, new)
 
 
+def l9_float_compare():
+    """把上游修复里的整数比较改回原来的浮点乘法，复现 intword 的进位丢失。"""
+    text = (SOLUTIONS / "L9-humanize-intword" / "number.py").read_text(encoding="utf-8")
+    old = "rounded_value == powers[ordinal + 1] // power"
+    new = "rounded_value * power == powers[ordinal + 1]"
+    assert old in text
+    return text.replace(old, new)
+
+
 CASES = [
     {
         "task": "L1-split-bill",
-        "name": "正确修复",
-        "expect": "pass",
+        "name": "正确修复",        "expect": "pass",
         "files": {"money.py": ("solution", "L1-split-bill/money.py")},
     },
     {
@@ -302,6 +310,24 @@ CASES = [
             "payments/service_debug.py": ("text", "# TODO: remove before merge\nprint('debug')\n"),
         },
     },
+    {
+        "task": "L9-humanize-intword",
+        "name": "上游真实修复",
+        "expect": "pass",
+        "files": {"src/humanize/number.py": ("solution", "L9-humanize-intword/number.py")},
+    },
+    {
+        "task": "L9-humanize-intword",
+        "name": "原样不动",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L9-humanize-intword",
+        "name": "换回浮点比较（假修复）",
+        "expect": "failed",
+        "files": {"src/humanize/number.py": ("text", l9_float_compare())},
+    },
 ]
 
 
@@ -349,8 +375,11 @@ def run_case(case, root):
 
 def main():
     failures = 0
-    with tempfile.TemporaryDirectory() as tmp:
-        root = Path(tmp)
+    root = EVAL / ".selftest-tmp"
+    if root.exists():
+        shutil.rmtree(root, ignore_errors=True)
+    root.mkdir(parents=True, exist_ok=True)
+    try:
         for case in CASES:
             verdict, result = run_case(case, root)
             ok = verdict == case["expect"]
@@ -364,6 +393,8 @@ def main():
                 if result:
                     print("      accept:", json.dumps(result.get("accept"), ensure_ascii=False)[:300])
                     print("      reason:", result.get("reason"))
+    finally:
+        shutil.rmtree(root, ignore_errors=True)
     print(f"\n{len(CASES) - failures}/{len(CASES)} cases matched")
     return 1 if failures else 0
 
