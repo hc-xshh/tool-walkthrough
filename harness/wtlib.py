@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OS = platform.system()  # Linux / Darwin / Windows
-WT_VERSION = "1.4.0"
+WT_VERSION = "1.5.0"
 PROFILES_DIR = ROOT / "harness" / "profiles"
 LOCK_FILE = ROOT / "harness" / "harness.lock"
 
@@ -56,6 +56,47 @@ def find_chrome():
                 if p.exists():
                     return str(p)
     return which_any(["google-chrome", "chromium", "chromium-browser", "chrome", "msedge"])
+
+
+def find_git():
+    """git binary: PATH first, then the usual install locations.
+
+    Windows installers put C:\\Program Files\\Git\\cmd on the *machine* PATH, but a
+    long-running parent process keeps its own stale copy of the environment; a
+    freshly installed git then looks missing until the app restarts. Resolving
+    the install path directly keeps `preflight` honest.
+    """
+    env = os.environ.get("WALKTHROUGH_GIT")
+    if env and Path(env).exists():
+        return env
+    found = which_any(["git"])
+    if found:
+        return found
+    if OS == "Windows":
+        candidates = [
+            r"C:\Program Files\Git\cmd\git.exe",
+            r"C:\Program Files (x86)\Git\cmd\git.exe",
+        ]
+        base = os.environ.get("LocalAppData")
+        if base:
+            candidates.append(str(Path(base) / "Programs" / "Git" / "cmd" / "git.exe"))
+    else:
+        candidates = ["/usr/bin/git", "/usr/local/bin/git", "/opt/homebrew/bin/git"]
+    for p in candidates:
+        if Path(p).exists():
+            return p
+    return None
+
+
+def git_version(binary=None):
+    p = binary or find_git()
+    if not p:
+        return None
+    try:
+        out = subprocess.run([p, "--version"], capture_output=True, text=True, timeout=5)
+        return version_tuple(out.stdout or out.stderr)
+    except Exception:
+        return None
 
 
 

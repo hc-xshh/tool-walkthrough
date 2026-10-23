@@ -2,6 +2,12 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v5.2 — 2026-10-22（不改流程：git 变成显式依赖）
+
+- **`preflight` 检查 git**：读 `harness.lock` 的 `git_min`（默认 2.20），capabilities 行输出 `git` / `git:unavailable`；`harness/preflight.sh` 的 host dependencies 也算 git。
+- **`find_git()` 先找安装位置、再看 PATH**：Windows 装完 Git 后，长驻的父进程环境还是旧的，只查 PATH 会误报 missing；常见路径（`C:\Program Files\Git\cmd`、Homebrew、`/usr/local/bin`）都会被找到，也可以用 `WALKTHROUGH_GIT` 指定。`git` 仍是 WARN 级——没有它，界面走查照跑，`new-run.sh`、钩子和后面的改动判分才需要。
+- **新增 `code-eval/`（实验）**：三个难度档的任务（单文件修 bug / 多文件加功能 / 跨模块排错）、每个任务一份不进 agent 上下文的隐藏验收、`prepare → 改动 → grade` 判分链路（用 git baseline + `git diff` 取改动，快照兜底）、TRAE Agent 的 CDP 驱动器、批量跑与记分卡。`tools/selftest.py` 用假 agent 验证口径：正确解通过、只讨好可见用例的不通过、改 `tests/**` 判 `scope_violation`。
+
 ## v5 — 2026-10-22
 
 - **新增 Step 1「产品遍历与页面地图」**（流程从 6 步变 7 步）：不是截一张首屏，而是把产品**点开一遍**——菜单、页签、二级页、弹窗里的按钮，点开才存在。每进一屏截首访图、枚举控件、记导航边；遍历阶段只记不做判断。

@@ -1,0 +1,15 @@
+{
+  "id": "L4-monthly-ledger",
+  "level": 4,
+  "title": "跨文件排错：时区归月、周末汇率、重复导出",
+  "fixture": "fixtures/L4-monthly-ledger/repo",
+  "accept": "accept/L4-monthly-ledger",
+  "prompt": "tasks/L4-monthly-ledger.prompt.txt",
+  "allowed": ["ledger/**"],
+  "forbidden": ["tests/**", "data/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 1800
+}

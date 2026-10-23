@@ -1,0 +1,17 @@
+项目路径：{workdir}
+
+销售明细导入（pipeline 包）现在有三处不对：
+
+1. 单价从元换算成「分」时有 1 分偏差：例如 12.345 元应该得到 1235 分，实际得到 1234 分。
+2. 价格为 0 的赠品行整条消失。
+3. 负价（退款）行也消失，而且没有被标成 is_refund。
+
+要求：
+
+- 单价一律按 half-up（四舍五入、遇 5 进位）到分；折扣先乘 (1 - discount/100) 再进位；
+- 0 价行与负价行都要保留；负价行 is_refund 为 true，其余行为 false；
+- 变换必须按各步骤的 priority 从小到大执行；
+- 不要改公开名字：read_rows、import_rows、四个 transform 函数名与参数；
+- 现有测试保持通过。
+
+改完跑 python -m unittest discover -s tests -v，并说明每处问题出在哪个文件。

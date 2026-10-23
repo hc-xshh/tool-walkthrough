@@ -1,8 +1,9 @@
 {
   "schema": 1,
-  "wt_version": "1.4.0",
+  "wt_version": "1.5.0",
   "python_min": "3.9",
   "tesseract_min": "5.0",
+  "git_min": "2.20",
   "tested_on": [
     "Linux Ubuntu 26.04 x86_64",
     "Linux GNOME Wayland/Xwayland, 1920x1080",

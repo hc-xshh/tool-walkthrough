@@ -18,6 +18,7 @@
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
 | `templates/report.md` | 七节报告模板（图随发现） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
+| `code-eval/` | 编码能力判分（实验）：L1–L4 四个任务 + 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器。方法文档等真实数据出来再定稿 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
 ## 不包含什么
@@ -25,13 +26,13 @@
 - **不含 `runs/` 案例库**：报告、截图、日志、产物都不在本包内。方法可以独立使用；需要样本时按本包流程自己跑一轮。
 - `runs/` 默认写在 `.gitignore` 里：证据常含账号、桌面和登录态，是否入库由你决定。
 - **不含任何被测产品的账号、登录态、截图或原始日志**。
-- 不包含 AI 编程工具的代码能力评测方法（那是另一套：同一任务书 + 独立验收脚本判分）。
+- 不含 AI 编程工具的**完整**能力评测方法：`code-eval/` 目前只有 3 个任务（L1–L3）和一套判分骨架，回答的是「这几个任务过不过」，不是「编程能力打几分」；办公等其它能力域的验收还没做。
 
 ## 依赖
 
 Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.py` 走原生截图 / 点击，隔离靠独立用户或虚拟机。
 
-需要：Python 3.9+、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
+需要：Python 3.9+、git 2.20+（`new-run.sh` 找仓根、钩子和 `code-eval` 的 diff 都要用）、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
 
 完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
 

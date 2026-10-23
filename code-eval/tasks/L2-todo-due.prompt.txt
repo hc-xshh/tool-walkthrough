@@ -1,0 +1,9 @@
+项目路径：{workdir}
+
+这是一个命令行待办清单（Python 标准库，JSON 存储）。请补完「截止日期」和「完成状态」三件事，现有测试必须继续通过：
+
+1. `add --due YYYY-MM-DD` 要真的把日期存进任务的 due 字段（现在存进去的是 null）。日期格式不合法时：错误信息打到 stderr、退出码 2、不写入任何任务。
+2. `list --due YYYY-MM-DD` 只列出 due 完全等于该日期的任务；没有 due 的任务不出现；日期格式不合法时退出码 2。
+3. 新增子命令 `done <id>`：把该任务标记为已完成（done=true）并持久化；id 不存在时 stderr 报错、退出码 1；不带 id 时退出码 2。`list` 里已完成的任务显示 `[x]`。
+
+存储字段仍是 id / title / done / due 四个，键名不要改。改完跑 python -m unittest discover -s tests -v 确认全绿，并说明改了哪些文件。

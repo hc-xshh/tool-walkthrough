@@ -1,0 +1,15 @@
+{
+  "id": "L2-todo-due",
+  "level": 2,
+  "title": "多文件加功能：截止日期与完成状态",
+  "fixture": "fixtures/L2-todo-due/repo",
+  "accept": "accept/L2-todo-due",
+  "prompt": "tasks/L2-todo-due.prompt.txt",
+  "allowed": ["cli.py", "store.py", "todo/**"],
+  "forbidden": ["tests/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 900
+}

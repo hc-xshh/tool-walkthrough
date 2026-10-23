@@ -29,7 +29,7 @@ say() { printf '%-28s %s\n' "$1" "$2"; }
 
 # 0. host dependencies
 missing=""
-for bin in Xvfb openbox dbus-daemon ffmpeg xdotool tesseract; do
+for bin in git Xvfb openbox dbus-daemon ffmpeg xdotool tesseract; do
   command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"
 done
 if [ -z "$missing" ]; then

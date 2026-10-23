@@ -56,6 +56,17 @@ def cmd_preflight(a):
     py_ok = sys.version_info[:2] >= py_min[:2]
     rc |= say("python", py_ok, platform.python_version())
 
+    git = find_git()
+    git_ver = git_version(git)
+    git_min = version_tuple(lock.get("git_min", "2.20"))
+    git_ok = bool(git) and bool(git_ver) and git_ver[:2] >= git_min[:2]
+    if git:
+        git_ver_text = ".".join(map(str, git_ver)) if git_ver else "version unknown"
+        git_detail = f"{git} ({git_ver_text})"
+    else:
+        git_detail = "install git: new-run.sh, git hooks and code-eval diffs need it"
+    rc |= say("git", git_ok, git_detail, warn_only=True)
+
     tess = which_any(["tesseract"])
     tess_ok = bool(tess)
     tess_min = version_tuple(lock.get("tesseract_min", "5.0"))
@@ -113,6 +124,7 @@ def cmd_preflight(a):
         "click" if OS != "Linux" or which_any(["xdotool"]) else "click:unavailable",
         "ocr" if tess_ok else "ocr:unavailable",
         "cdp" if cdp_ok else "cdp:unavailable",
+        "git" if git_ok else "git:unavailable",
     ]
     print(f"{'capabilities':<24} {'INFO':<5} {', '.join(caps)}")
     if lock and lock.get("wt_version") and lock["wt_version"] != WT_VERSION:

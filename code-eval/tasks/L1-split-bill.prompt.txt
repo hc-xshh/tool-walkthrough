@@ -1,0 +1,13 @@
+项目路径：{workdir}
+
+这个项目里 split_bill 有缺陷：它把每人分到的金额向下取整后就返回，余下的分丢了，导致每个人拿到金额的总和小于原金额。
+
+请修好它，要求：
+
+1. 返回 people 个整数，总和严格等于 amount_cents；
+2. 任意两个人的金额差不超过 1 分；
+3. amount_cents 为负数、或 people <= 0 时，抛出 ValueError；
+4. 只允许改 money.py，不要动 tests/ 里的任何文件；
+5. 改完自己跑一遍 python -m unittest discover -s tests -v，确认全绿。
+
+做完请说明：改了哪个文件、怎么验证的。

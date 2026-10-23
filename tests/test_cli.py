@@ -71,6 +71,11 @@ class CliTest(unittest.TestCase):
             self.assertEqual(res.returncode, 0, res.stdout)
             self.assertIn("build the page map first", res.stdout)
 
+    def test_preflight_reports_git(self):
+        """git is a declared dependency: it must show up as PASS or WARN, not vanish."""
+        res = run("preflight")
+        self.assertRegex(res.stdout, r"(?m)^git\s+(PASS|WARN)")
+
 
 if __name__ == "__main__":
     unittest.main()

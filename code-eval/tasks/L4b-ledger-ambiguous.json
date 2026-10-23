@@ -1,0 +1,16 @@
+{
+  "id": "L4b-ledger-ambiguous",
+  "level": 4,
+  "title": "同一仓库，只给症状不给规则",
+  "fixture": "fixtures/L4-monthly-ledger/repo",
+  "accept": "accept/L4-monthly-ledger",
+  "prompt": "tasks/L4b-ledger-ambiguous.prompt.txt",
+  "allowed": ["ledger/**"],
+  "forbidden": ["tests/**", "data/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 1800,
+  "idle_s": 150
+}

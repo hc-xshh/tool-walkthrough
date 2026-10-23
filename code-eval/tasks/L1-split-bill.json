@@ -1,0 +1,15 @@
+{
+  "id": "L1-split-bill",
+  "level": 1,
+  "title": "单文件修 bug：取整丢分",
+  "fixture": "fixtures/L1-split-bill/repo",
+  "accept": "accept/L1-split-bill",
+  "prompt": "tasks/L1-split-bill.prompt.txt",
+  "allowed": ["money.py"],
+  "forbidden": ["tests/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 120
+  },
+  "timebox_s": 600
+}

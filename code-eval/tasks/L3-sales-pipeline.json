@@ -1,0 +1,15 @@
+{
+  "id": "L3-sales-pipeline",
+  "level": 3,
+  "title": "跨模块排错：金额换算、退款与执行顺序",
+  "fixture": "fixtures/L3-sales-pipeline/repo",
+  "accept": "accept/L3-sales-pipeline",
+  "prompt": "tasks/L3-sales-pipeline.prompt.txt",
+  "allowed": ["pipeline/**"],
+  "forbidden": ["tests/**"],
+  "visible": {
+    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "timeout": 180
+  },
+  "timebox_s": 1200
+}
