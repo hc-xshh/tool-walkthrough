@@ -1,6 +1,5 @@
 """What `coverage` must catch, and what it must not break on."""
 import pathlib
-import sys
 import tempfile
 import unittest
 

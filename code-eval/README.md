@@ -26,7 +26,7 @@ code-eval/
   runs/           本地产物（不在本目录，见仓库根的 .gitignore）
 ```
 
-已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L6 各 3 次）。
+已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）。
 
 ## 口径
 
@@ -91,7 +91,7 @@ python code-eval/tools/regrade.py --run runs/<run>
 整套自测（不需要被测工具）：
 
 ```bash
-python code-eval/tools/selftest.py     # 15 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
+python code-eval/tools/selftest.py     # 34 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
 ```
 
 ## 任务清单

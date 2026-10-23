@@ -56,6 +56,13 @@ def main():
     workdir = Path(a.workdir).resolve()
     fixture = OFFICE / spec["fixture"]
 
+    probe = subprocess.run([a.python, "-c", "import openpyxl"], capture_output=True)
+    if probe.returncode != 0:
+        raise SystemExit(
+            f"{a.python} has no openpyxl; pass --python <interpreter> "
+            "(or set OFFICE_PYTHON) to one that does"
+        )
+
     result = {
         "schema": 1,
         "task": spec["id"],

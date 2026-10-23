@@ -12,12 +12,29 @@ import difflib
 import hashlib
 import json
 import os
+import shutil
 import sys
 from pathlib import Path
 
 SKIP_DIRS = {"__pycache__", ".git", ".venv", ".pytest_cache", "_accept", ".mypy_cache"}
 SKIP_SUFFIX = {".pyc", ".pyo"}
 MAX_DIFF_BYTES = 200_000
+
+
+def find_git():
+    """PATH 里没有时去常见安装位置找——长驻进程的环境变量经常是旧的。"""
+    found = shutil.which("git")
+    if found:
+        return found
+    for candidate in (
+        r"C:\Program Files\Git\cmd\git.exe",
+        "/usr/bin/git",
+        "/usr/local/bin/git",
+        "/opt/homebrew/bin/git",
+    ):
+        if Path(candidate).exists():
+            return candidate
+    return None
 
 
 def sha256(path):

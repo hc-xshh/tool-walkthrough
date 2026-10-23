@@ -29,8 +29,16 @@ def force_remove(func, path, exc):
     func(path)
 
 
+def rmtree(path):
+    """shutil.rmtree 的跨版本包装：3.12+ 用 onexc，3.9–3.11 只有 onerror。"""
+    try:
+        shutil.rmtree(path, onexc=force_remove)
+    except TypeError:
+        shutil.rmtree(path, onerror=lambda func, p, exc_info: force_remove(func, p, exc_info))
+
+
 def git(args, cwd):
-    git_bin = shutil.which("git")
+    git_bin = snap.find_git()
     if not git_bin:
         return None
     p = subprocess.run(
@@ -58,12 +66,12 @@ def main():
     if workdir.exists():
         if not a.force:
             raise SystemExit(f"{workdir} already exists; pass --force to rebuild")
-        shutil.rmtree(workdir, onexc=force_remove)
+        rmtree(workdir)
     workdir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, workdir)
 
     baseline = None
-    if shutil.which("git"):
+    if snap.find_git():
         git(["init", "-q"], workdir)
         git(["add", "-A"], workdir)
         git(["-c", "user.name=code-eval", "-c", "user.email=eval@local",

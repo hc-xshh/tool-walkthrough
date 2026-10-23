@@ -2,6 +2,16 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v5.7 — 2026-10-23（全量 review 后的修补）
+
+- **Python 3.9 兼容**：`prepare.py` 的 `shutil.rmtree(onexc=...)` 只有 3.12+ 支持，改成带 `onerror` 回退的包装（README 一直写的是 3.9+）。
+- **git 兜底统一**：`find_git()` 收进 `snap.py`，`prepare.py` 与 `grade.py` 都用它；此前 PATH 里没有 git 时，baseline 和 `git diff` 会被静默跳过，补丁里就少了「修改过的文件」。
+- **办公判分的前置检查**：`office-eval/tools/grade.py` 先确认 `--python` 能 `import openpyxl`，否则直接报错退出，而不是判成「产物不合格」。
+- **自测不再写宿主 temp**：`office-eval` 的自测根目录挪到 `office-eval/.selftest-tmp`，和 `code-eval` 一致（workspace-write 沙箱下宿主 temp 不可写）。
+- **死代码与未用 import**：删掉 `drive_trae.py` 里没人调用的 `approve()` 分支（改为复用），清掉 `cdp.py`、`test_coverage.py`、`selftest.py` 的未用 import。
+- **记分卡不再写死 3 列**：按实际最大 rep 生成表头。
+- 文档对齐：`code-eval/README` 的 L1–L6 → L1–L9、用例数 15 → 34；根 README 的「不包含什么」改成 9 个任务 + 办公现状。
+
 ## v5.6 — 2026-10-23（真实开源仓库）
 
 - **L9-humanize-intword**：拿 [humanize](https://github.com/python-humanize/humanize)（MIT）修复提交 `ca892b3` 的父提交做 fixture，隐藏验收用上游自己的回归测试 `test_intword_rounding_rollover`，题面只给症状（`10**24-1` 渲染成 `1000.0 sextillion`）。这是第一个「代码不是我写的、bug 不是我埋的、测试不是我写的」任务。

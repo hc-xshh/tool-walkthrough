@@ -59,8 +59,12 @@ def run_cmd(cmd, cwd, timeout, env=None):
         }
 
 
+def git_binary():
+    return snap.find_git()
+
+
 def git_evidence(workdir):
-    git = shutil.which("git")
+    git = git_binary()
     if not git or not (Path(workdir) / ".git").exists():
         return None
     status = run_cmd([git, "status", "--porcelain", "-uall"], workdir, 30)

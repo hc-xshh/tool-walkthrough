@@ -37,13 +37,14 @@ def fmt(value, digits=0):
 
 def build(rows):
     tasks = sorted({r["task"] for r in rows}, key=lambda t: LEVEL.get(t, t))
+    max_rep = max((r["rep"] for r in rows), default=3)
     lines = ["# 能力记分卡", ""]
-    lines.append("| 任务 | 档 | " + " | ".join(f"r{i}" for i in range(1, 4)) + " | 通过 |")
-    lines.append("|---|---|---|---|---|---|")
+    lines.append("| 任务 | 档 | " + " | ".join(f"r{i}" for i in range(1, max_rep + 1)) + " | 通过 |")
+    lines.append("|---|---|" + "---|" * max_rep + "---|")
     for task in tasks:
         reps = {r["rep"]: r for r in rows if r["task"] == task}
         cells = []
-        for i in range(1, 4):
+        for i in range(1, max_rep + 1):
             r = reps.get(i)
             cells.append("—" if not r else ("✅" if r["verdict"] == "pass" else "❌"))
         passed = sum(1 for r in reps.values() if r["verdict"] == "pass")

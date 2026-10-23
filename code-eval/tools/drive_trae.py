@@ -95,8 +95,7 @@ def click_editor(log_path, tries=12):
     for _ in range(tries):
         pos = editor_rect()
         if pos == "__covered__":
-            label = pending_approval()
-            if label and click_label(label):
+            if approve(log_path):
                 time.sleep(1.5)
                 continue
             cdp("key", "Escape")
@@ -165,10 +164,8 @@ def wait_done(log_path, timebox, debug=False, idle_s=45):
             if debug:
                 print("STATE:", tail)
             last, last_change = current, time.time()
-        label = pending_approval()
-        if label and click_label(label):
+        if approve(log_path):
             approvals += 1
-            log(log_path, "approve", label=label)
             time.sleep(2)
             continue
         if time.time() - last_change > idle_s:

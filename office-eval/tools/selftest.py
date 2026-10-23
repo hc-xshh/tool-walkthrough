@@ -11,7 +11,6 @@ import os
 import shutil
 import subprocess
 import sys
-import tempfile
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -50,9 +49,13 @@ def main():
     py = python_with_openpyxl()
     print(f"python: {py}")
     failures = 0
-    with tempfile.TemporaryDirectory() as tmp:
+    root_base = OFFICE / ".selftest-tmp"
+    if root_base.exists():
+        shutil.rmtree(root_base, ignore_errors=True)
+    root_base.mkdir(parents=True, exist_ok=True)
+    try:
         for variant, expect in CASES:
-            root = Path(tmp) / variant
+            root = root_base / variant
             workdir = root / "work"
             shutil.copytree(FIXTURE, workdir)
             if variant != "baseline":
@@ -76,6 +79,8 @@ def main():
             if not ok:
                 failures += 1
                 print("      ", result["reason"][:200])
+    finally:
+        shutil.rmtree(root_base, ignore_errors=True)
     print(f"\n{len(CASES) - failures}/{len(CASES)} cases matched")
     return 1 if failures else 0
 
