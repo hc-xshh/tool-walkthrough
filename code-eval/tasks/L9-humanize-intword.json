@@ -7,6 +7,9 @@
   "prompt": "tasks/L9-humanize-intword.prompt.txt",
   "runner": "pytest",
   "pythonpath": "src",
+  "generated": {
+    "src/humanize/_version.py": "__version__ = \"0.0.0\"  # stub: setuptools_scm writes this at build time\n"
+  },
   "allowed": ["src/**"],
   "forbidden": ["tests/**"],
   "visible": {

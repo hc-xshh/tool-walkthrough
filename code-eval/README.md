@@ -20,13 +20,13 @@ code-eval/
   tasks/          任务书（给 agent 的 prompt）+ 任务规格（allowed / forbidden / 验收）
   fixtures/       每个任务的起始仓库（agent 在副本上工作）
   accept/         隐藏验收，判分时才拷进工作目录，agent 看不到
-  tools/          prepare / snap / grade / accept_run / drive_trae / drive_qoder / drive_cursor / drive_codex / preflight / run_tool / run_suite / check_tasks / scorecard / timing / regrade / selftest
+  tools/          prepare / snap / grade / accept_run / drive_trae / drive_qoder / drive_cursor / drive_codex / preflight / run_tool / run_suite / check_tasks / scorecard / timing / regrade / review / selftest
   selftest/       假 agent 的参考解与负例，用来验证判分口径
   reports/        跑完的报告（可提交，不含证据原文件）
   runs/           本地产物（不在本目录，见仓库根的 .gitignore）
 ```
 
-已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）、[`reports/2026-10-26-qoder-cn.md`](reports/2026-10-26-qoder-cn.md)（Qoder CN 0.4.9，L1–L9 各 3 次，29/30）、[`reports/2026-10-26-four-tools.md`](reports/2026-10-26-four-tools.md)（四家横向：Trae / Qoder / Cursor / Codex）。
+已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）。Qoder CN 0.4.9 与四家横向（Trae / Qoder / Cursor / Codex）也跑过，但那两份报告没有入库，只在本机 `runs/` 下——不要当成可引用的公开结论。
 
 ## 口径
 
@@ -56,6 +56,28 @@ code-eval/
 ```bash
 python tools/drive_trae.py --task L8-payments-idem ... --max-rounds 3
 ```
+
+## 独立评审：改得怎么样（可选，不参与判分）
+
+判分回答「过没过」，评审回答「改得怎么样」。用 Alibaba 开源的 Open Code Review（命令名 `ocr`）对 agent 改过的文件再跑一遍：
+
+```bash
+# 装一次
+npm i -g @alibaba-group/open-code-review
+ocr config set provider deepseek      # 也可以 openai / anthropic / 自定义兼容端点
+ocr llm test
+
+# 对一次已判分的结果做评审
+python code-eval/tools/review.py --result runs/<run>/results/L1-r1.json
+
+# 批量跑的时候直接开
+python code-eval/tools/run_tool.py --driver drive_codex.py ... --review
+```
+
+- 产物是 `<result>.review.json`：`comments[]`（文件 / 起止行 / 意见 / 建议补丁）+ `summary`（token、耗时）。
+- **它不改变 verdict**。评审跑失败只记 `status=unavailable|timeout|error`，判分结果照旧；没装 `ocr` 也退出 0——「评审工具没装」不是「这次尝试有问题」。
+- 只审 `changes.added` + `changes.modified` 里出的文件，用 `ocr scan`（整文件、不需要提交），所以会连带看到该文件里的既有问题，不只是这次改动。要只审本次 diff，得先把 agent 的改动提交成一次 commit，再 `ocr review --commit`。
+- 用途是横向比较多一层：同一任务，过没过是一层，「被独立评审挑出几条、挑的是不是真问题」是另一层。**条数不是能力分**，误报要人看。
 
 ## 证据与归因（2026-10-26 补）
 

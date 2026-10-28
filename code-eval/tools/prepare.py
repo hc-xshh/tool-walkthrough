@@ -70,6 +70,16 @@ def main():
     workdir.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(src, workdir)
 
+    # 有些 fixture 依赖构建时生成的文件（setuptools_scm 的 _version.py 之类），
+    # 这些文件在被 vendor 的仓库自己的 .gitignore 里，clone 下来必然缺失。
+    # 由任务规格声明内容，prepare 时写进工作副本——不要靠本机残留文件。
+    for rel, content in (spec.get("generated") or {}).items():
+        target = workdir / rel
+        if target.exists():
+            continue
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_text(content, encoding="utf-8")
+
     baseline = None
     if snap.find_git():
         git(["init", "-q"], workdir)

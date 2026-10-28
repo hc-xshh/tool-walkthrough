@@ -2,6 +2,14 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.2（2026-10-28，判分之外的独立评审 + 三处可复现性修补）
+
+- **新增 `code-eval/tools/review.py`**：对一次判分结果里 `changes.added` / `changes.modified` 的文件跑 Alibaba Open Code Review（`ocr scan --format json`），产出 `<result>.review.json`。评审不是判分：`status=unavailable|timeout|error` 时判分结果照旧，没装 ocr 也退出 0。`run_tool.py --review` 可在跑批时顺带打开。
+- **L9 干净 clone 可复现**：humanize 的 `src/humanize/_version.py` 是被 vendor 的仓库自己 `.gitignore` 掉的构建产物，clone 下来必然缺失，pytest 收集期就报 `ModuleNotFoundError`。改为在任务规格里声明 `generated`，由 `prepare.py` 写进工作副本（进 baseline 提交，不算 agent 改动）。此前干净 clone 上 code-eval 自测是 31/34，现在是 34/34。
+- **`office-eval/tools/selftest.py`**：候选解释器不存在时 `subprocess.run` 抛 `FileNotFoundError`，把整轮自测带崩；改为 `try/except OSError` 跳过、继续试下一个候选。
+- 文档：根 README 的版本号从 v5 追到 v6.2；`code-eval/README.md` 删掉两份没有入库的 Qoder / 四家横向报告链接（只留 trae-cn），并补「独立评审」一节。
+- 测试：新增 `tests/test_review.py`（5 条：去重、解析、no-changes、ocr 缺失、stub JSON）。
+
 ## v6.1（2026-10-28，目标页选择、证据补丁与题面禁区检查）
 
 - **`cdp.py` 目标页选择**：`/json/list` 里常有 `desktop-pet` / 浮层 / 空页排在前面，`pages[0]` 会连错（Qoder 0.4.9：`text` 读出来是空）。新增 `pick_target()` 按 URL 评分：`renderer` / `index.html` 优先，`desktop-pet` / `fixed-surface` / 空页降权；`--match` 仍可强制指定。`tests/test_cdp_pick.py` 覆盖 3 条。

@@ -37,9 +37,14 @@ def python_with_openpyxl():
         ),
     ]
     for cand in filter(None, candidates):
-        probe = subprocess.run(
-            [cand, "-c", "import openpyxl"], capture_output=True
-        )
+        try:
+            probe = subprocess.run(
+                [cand, "-c", "import openpyxl"], capture_output=True
+            )
+        except OSError:
+            # 不存在的候选（例如只在 Windows 上有的 .exe 路径）应当跳过，
+            # 而不是让整轮自测带着 traceback 退出。
+            continue
         if probe.returncode == 0:
             return cand
     raise SystemExit("no python with openpyxl; set OFFICE_PYTHON")

@@ -29,6 +29,8 @@ def main():
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--only-missing", action="store_true")
     ap.add_argument("--timebox-extra", type=int, default=180)
+    ap.add_argument("--review", action="store_true",
+                    help="每次尝试后跑 review.py（Alibaba Open Code Review）");
     a = ap.parse_args()
 
     if a.preflight:
@@ -95,6 +97,12 @@ def main():
                     pass
             summary.append((task, rep, verdict, took, rc))
             print(f"=== {task} r{rep} -> {verdict} ({took}s, rc={rc}) ===", flush=True)
+            if a.review and out.exists():
+                r = subprocess.run(
+                    [sys.executable, str(HERE / "review.py"), "--result", str(out)],
+                    capture_output=True, text=True, encoding="utf-8", errors="replace",
+                )
+                print((r.stdout or r.stderr).strip()[-400:], flush=True)
 
     print("\nsummary")
     errors = 0
