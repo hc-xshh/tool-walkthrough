@@ -28,6 +28,15 @@ sys.path.insert(0, str(HERE))
 
 import snap  # noqa: E402
 
+# Interpreter caches are written by every test run and are not agent edits.
+# Without this, `git diff` put binary __pycache__ hunks into the evidence patch
+# and `git status` made the change list look larger than it was.
+GIT_EXCLUDES = [
+    ":(exclude)**/__pycache__/**",
+    ":(exclude)**/*.pyc",
+    ":(exclude)**/*.pyo",
+]
+
 
 def run_cmd(cmd, cwd, timeout, env=None):
     started = time.time()
@@ -67,8 +76,8 @@ def git_evidence(workdir):
     git = git_binary()
     if not git or not (Path(workdir) / ".git").exists():
         return None
-    status = run_cmd([git, "status", "--porcelain", "-uall"], workdir, 30)
-    patch = run_cmd([git, "diff", "--", "."], workdir, 60)
+    status = run_cmd([git, "status", "--porcelain", "-uall", "--", "."] + GIT_EXCLUDES, workdir, 30)
+    patch = run_cmd([git, "diff", "--", "."] + GIT_EXCLUDES, workdir, 60)
     return {
         "status": status["stdout"][-4000:],
         "diff": patch["stdout"][-20000:],

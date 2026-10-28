@@ -12,6 +12,6 @@
 - 0 价行与负价行都要保留；负价行 is_refund 为 true，其余行为 false；
 - 变换必须按各步骤的 priority 从小到大执行；
 - 不要改公开名字：read_rows、import_rows、四个 transform 函数名与参数；
-- 现有测试保持通过。
+- 不要改 `tests/`；现有测试保持通过。
 
 改完跑 python -m unittest discover -s tests -v，并说明每处问题出在哪个文件。

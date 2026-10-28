@@ -20,13 +20,13 @@ code-eval/
   tasks/          任务书（给 agent 的 prompt）+ 任务规格（allowed / forbidden / 验收）
   fixtures/       每个任务的起始仓库（agent 在副本上工作）
   accept/         隐藏验收，判分时才拷进工作目录，agent 看不到
-  tools/          prepare / snap / grade / accept_run / drive_trae / run_suite / scorecard / timing / regrade / selftest
+  tools/          prepare / snap / grade / accept_run / drive_trae / drive_qoder / drive_cursor / drive_codex / preflight / run_tool / run_suite / check_tasks / scorecard / timing / regrade / selftest
   selftest/       假 agent 的参考解与负例，用来验证判分口径
   reports/        跑完的报告（可提交，不含证据原文件）
   runs/           本地产物（不在本目录，见仓库根的 .gitignore）
 ```
 
-已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）。
+已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）、[`reports/2026-10-26-qoder-cn.md`](reports/2026-10-26-qoder-cn.md)（Qoder CN 0.4.9，L1–L9 各 3 次，29/30）、[`reports/2026-10-26-four-tools.md`](reports/2026-10-26-four-tools.md)（四家横向：Trae / Qoder / Cursor / Codex）。
 
 ## 口径
 
@@ -56,6 +56,27 @@ code-eval/
 ```bash
 python tools/drive_trae.py --task L8-payments-idem ... --max-rounds 3
 ```
+
+## 证据与归因（2026-10-26 补）
+
+- 代码判分的证据是 **diff + 隐藏验收输出**，不是界面截图；`scope_violation` 不等于「作弊」——先看它改的是不是回归测试，再下结论。
+- 跑之前记录账号 / 套餐 / 额度 / provider。免费额度用尽、账号不能用某个模型、未登录，都是 **未测**，不是 `failed`；这些只能进报告的限制，不能写成产品缺陷。
+- 通用驱动：`run_tool.py --driver drive_cursor.py|drive_codex.py --tasks ... --reps 3 --run <dir>`；Cursor 走 CDP/ProseMirror，Codex 走 `codex exec --json` + `resume --last`。
+- `prepare.py --force` 前先关掉被测应用对该 workdir 的占用；Cursor 会锁 `.git/cursor/crepe/index.bin`，锁住时换新 workdir，不要反复重试删除。
+- 跑批前先做 preflight：
+  ```bash
+  python code-eval/tools/preflight.py --tool cursor --port 9562 \
+      --out runs/<run>/preflight.json
+  python code-eval/tools/run_tool.py --driver drive_cursor.py ... \
+      --preflight runs/<run>/preflight.json
+  ```
+  `blocked`（额度用尽 / 账号不能用模型 / 抓错窗口）会退出 2，run_tool 不会启动任务。
+- 跑批前先检查「题面写没写禁区」：
+  ```bash
+  python code-eval/tools/check_tasks.py          # 只 WARN
+  python code-eval/tools/check_tasks.py --strict # 有警告退 1，CI/跑批用这个
+  ```
+  `forbidden` 里的 `tests/`、`data/` 必须在 prompt 里用「不要改 …」写明；否则 agent 没被告知，判 `scope_violation` 会把题面漏写记成产品越界。
 
 ## 跑一次
 
@@ -127,8 +148,8 @@ python tools/drive_trae.py --task L9-humanize-intword ...
 1. `fixtures/<id>/repo/`：起始仓库 + 自带测试（要能跑）。
 2. `accept/<id>/test_accept.py`：隐藏验收，只依赖标准库和被测模块。
 3. `tasks/<id>.json`：`fixture` / `accept` / `prompt` / `allowed` / `forbidden` / `visible` / `timebox_s`。
-4. `tasks/<id>.prompt.txt`：任务书，路径用 `{workdir}` 占位。
-5. 在 `tools/selftest.py` 加「参考解通过」和「偷懒不通过」两条用例，再跑一遍自测。
+4. `tasks/<id>.prompt.txt`：任务书，路径用 `{workdir}` 占位；`forbidden` 里的 `tests/`、`data/` 必须在题面里用「不要改 …」写明。
+5. 在 `tools/selftest.py` 加「参考解通过」和「偷懒不通过」两条用例；再跑 `python tools/check_tasks.py --strict` 与一遍自测。
 
 ## 边界
 

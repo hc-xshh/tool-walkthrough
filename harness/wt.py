@@ -12,6 +12,7 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py report runs/2026-10-19-tool
   python3 harness/wt.py audit --strict runs/2026-10-19-tool
   python3 harness/wt.py coverage runs/2026-10-19-tool
+  python3 harness/wt.py evidence --strict runs/2026-10-19-tool
 
 Linux uses X11 tooling (ffmpeg/xdotool). macOS uses screencapture and
 cliclick (or AppleScript). Windows uses PowerShell/.NET and ctypes.
@@ -28,12 +29,15 @@ Checks live in wtcheck.py, capture in wtshot.py, shared plumbing in wtlib.py.
 from __future__ import annotations
 
 import argparse
+import csv
 import json
 import os
 import platform
 import shutil
+import struct
 import subprocess
 import sys
+import tempfile
 import time
 from datetime import datetime
 from pathlib import Path
@@ -43,6 +47,20 @@ from wtlib import profile, resolve_run, log_event
 import wtshot
 from wtshot import enable_dpi_awareness, read_shot_meta
 from wtcheck import cmd_audit, cmd_coverage
+
+
+def launch_env(base=None):
+    """Environment for a launched GUI app.
+
+    Electron reads ELECTRON_RUN_AS_NODE. When an agent host exports it, the app
+    starts as plain Node: no window, exit 9, and `--version` prints a Node
+    version. Strip it for the child instead of asking the user to relaunch.
+    Returns (env, stripped) so the caller can say what it changed.
+    """
+    env = dict(os.environ if base is None else base)
+    stripped = env.pop("ELECTRON_RUN_AS_NODE", None) is not None
+    return env, stripped
+
 
 
 def cmd_preflight(a):
@@ -95,6 +113,14 @@ def cmd_preflight(a):
         "requests + websocket-client" if cdp_ok else "pip install -r harness/requirements.txt",
         warn_only=True,
     )
+    if os.environ.get("ELECTRON_RUN_AS_NODE"):
+        say(
+            "electron env",
+            False,
+            "ELECTRON_RUN_AS_NODE is set; Electron apps would start as Node "
+            "(no window, exit 9). launch strips it for the child.",
+            warn_only=True,
+        )
 
     if OS == "Linux":
         for b in ("ffmpeg", "xdotool", "Xvfb", "openbox", "dbus-daemon", "xdpyinfo"):
@@ -297,6 +323,128 @@ def cmd_click(a):
 
 
 
+def png_size(path):
+    """Return (width, height) from a PNG IHDR, or (0, 0) if not a PNG."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+        if len(head) >= 24 and head[:8] == b"\x89PNG\r\n\x1a\n":
+            return struct.unpack(">II", head[16:24])
+    except OSError:
+        pass
+    return 0, 0
+
+
+def _evidence_meta(root):
+    meta = {}
+    candidates = [root / "evidence.json", root / "shots" / "captions.json"]
+    if root.name in ("shots", "screens"):
+        candidates.append(root.parent / "evidence.json")
+    for p in candidates:
+        if not p.exists():
+            continue
+        try:
+            data = json.loads(p.read_text(encoding="utf-8-sig"))
+        except (OSError, json.JSONDecodeError) as exc:
+            print(f"WARN: cannot read {p}: {exc}")
+            continue
+        for key, value in (data or {}).items():
+            meta[str(key).replace("\\", "/")] = value if isinstance(value, dict) else {"caption": str(value)}
+    return meta
+
+
+def _evidence_type(meta, path, root):
+    rel = ""
+    if path.is_relative_to(root):
+        rel = str(path.relative_to(root)).replace("\\", "/")
+    for key in (path.name, rel, f"shots/{path.name}", f"screens/{path.name}"):
+        if key and key in meta:
+            v = meta[key]
+            return v.get("type") or "未标注", v.get("caption") or ""
+    return "未标注", ""
+
+
+def _evidence_status(w, h, typ, min_w, min_h):
+    if not w or not h:
+        return "not-image"
+    bits = []
+    if w < min_w or h < min_h:
+        bits.append("low-res")
+    if typ == "未标注":
+        bits.append("unlabeled")
+    return "+".join(bits) if bits else "ok"
+
+
+def cmd_evidence(a):
+    if a.cells:
+        root = Path(a.cells).expanduser().resolve().parent
+    elif a.shots:
+        root = Path(a.shots).expanduser().resolve()
+    else:
+        root = resolve_run(a)
+    if not root:
+        raise SystemExit("evidence needs a run dir, --shots or --cells")
+    rows = []
+    meta = {} if a.cells else _evidence_meta(root)
+
+    if a.cells:
+        cells = Path(a.cells).expanduser().resolve()
+        with cells.open(encoding="utf-8-sig", newline="") as f:
+            for rec in csv.DictReader(f):
+                item = (rec.get("item") or "").strip()
+                tool = (rec.get("tool") or "").strip()
+                raw = (rec.get("file") or "").strip()
+                typ = (rec.get("type") or "").strip() or "无独立截图"
+                caption = (rec.get("caption") or "").strip()
+                if not raw:
+                    rows.append({"item": item, "tool": tool, "file": "", "width": 0,
+                                 "height": 0, "type": "无独立截图", "caption": caption,
+                                 "status": "no-shot"})
+                    continue
+                path = Path(raw)
+                if not path.is_absolute():
+                    direct = path.resolve()
+                    path = direct if direct.exists() else (cells.parent / path).resolve()
+                w, h = png_size(path)
+                rows.append({"item": item, "tool": tool, "file": str(path), "width": w,
+                             "height": h, "type": typ, "caption": caption,
+                             "status": _evidence_status(w, h, typ, a.min_width, a.min_height)})
+    else:
+        paths = set()
+        subdirs = [root / "shots", root / "screens"]
+        bases = [p for p in subdirs if p.exists()] or [root]
+        for base in bases:
+            for ext in ("*.png", "*.jpg", "*.jpeg"):
+                paths.update(base.glob(ext))
+        for path in sorted(paths):
+            w, h = png_size(path)
+            typ, caption = _evidence_type(meta, path, root)
+            rows.append({"item": "", "tool": "", "file": str(path), "width": w,
+                         "height": h, "type": typ, "caption": caption,
+                         "status": _evidence_status(w, h, typ, a.min_width, a.min_height)})
+
+    print(f"{'file':60} {'size':>10}  {'type':16} status")
+    bad = 0
+    for r in rows:
+        name = Path(r["file"]).name if r["file"] else "(no screenshot)"
+        print(f"{name:60} {r['width']:>4}x{r['height']:<4} {r['type']:16} {r['status']}")
+        if r["status"] not in ("ok", "no-shot"):
+            bad += 1
+    print(f"{len(rows)} rows, {bad} need attention, min {a.min_width}x{a.min_height}")
+
+    if a.out:
+        out = Path(a.out).expanduser().resolve()
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with out.open("w", encoding="utf-8", newline="") as f:
+            w = csv.DictWriter(f, fieldnames=["item", "tool", "file", "width", "height",
+                                              "type", "caption", "status"])
+            w.writeheader()
+            w.writerows(rows)
+        print(f"wrote {out}")
+
+    return 1 if (a.strict and bad) else 0
+
+
 def cmd_ocr(a):
     prof = profile(a)
     tess = which_any(["tesseract"])
@@ -333,7 +481,7 @@ def cmd_launch(a):
     prof = profile(a)
     log = Path(a.log).expanduser().resolve()
     log.parent.mkdir(parents=True, exist_ok=True)
-    env = dict(os.environ)
+    env, stripped = launch_env()
     cmd = list(a.command)
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
@@ -376,9 +524,46 @@ def cmd_launch(a):
     else:
         raise SystemExit(f"unsupported OS: {OS}")
     print(f"launched pid {p.pid} log={log}")
+    if stripped:
+        print("stripped ELECTRON_RUN_AS_NODE for the child (Electron would otherwise run as Node)")
     return {"target": " ".join(cmd), "detail": f"pid={p.pid} log={log}"}
 
 
+
+
+def cmd_focus(a):
+    """Bring a running app's window to the foreground.
+
+    Chromium throttles occluded windows: CDP still answers `text`, but
+    Page.captureScreenshot can hang until the window is visible again.
+    """
+    name = a.name
+    if OS == "Windows":
+        ps = which_any(["powershell", "pwsh"])
+        if not ps:
+            raise SystemExit("focus needs PowerShell on Windows")
+        helper = ROOT / "harness" / "focus.ps1"
+        p = subprocess.run(
+            [ps, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(helper), name],
+            capture_output=True, text=True,
+        )
+        if p.returncode != 0:
+            raise SystemExit(f"no visible window for {name!r}")
+        print(p.stdout.strip())
+        return {"target": name, "detail": p.stdout.strip()}
+    if OS == "Darwin":
+        subprocess.run(["osascript", "-e", f'tell application "{name}" to activate'], check=False)
+        return {"target": name, "detail": "activated"}
+    xdo = which_any(["xdotool"])
+    if not xdo:
+        raise SystemExit("focus needs xdotool on Linux")
+    p = subprocess.run([xdo, "search", "--name", name], capture_output=True, text=True)
+    ids = [x for x in p.stdout.split() if x]
+    if not ids:
+        raise SystemExit(f"no window matching {name!r}")
+    subprocess.run([xdo, "windowactivate", "--sync", ids[-1]], check=False)
+    print(f"activated {ids[-1]}")
+    return {"target": name, "detail": f"window {ids[-1]}"}
 
 
 def cmd_report(a):
@@ -446,9 +631,13 @@ def main():
     p = sub.add_parser("launch", help="launch an app with a log file")
     p.add_argument("command", nargs=argparse.REMAINDER)
     p.add_argument("--app", default=None, help="macOS app name for 'open -a'")
-    p.add_argument("--log", default="/tmp/walkthrough/app.log")
+    p.add_argument("--log", default=os.path.join(tempfile.gettempdir(), "walkthrough", "app.log"))
     p.add_argument("--display", default=None)
     p.set_defaults(func=cmd_launch)
+
+    p = sub.add_parser("focus", help="bring a running app's window to the foreground")
+    p.add_argument("name", help="process name substring (Windows) or window title (Linux/macOS)")
+    p.set_defaults(func=cmd_focus)
 
     p = sub.add_parser("report", help="render report.md to PDF")
     p.add_argument("run_dir")
@@ -471,6 +660,17 @@ def main():
     p.add_argument("run_dir")
     p.add_argument("--strict", action="store_true", help="exit non-zero when anything is uncovered")
     p.set_defaults(func=cmd_coverage)
+
+    p = sub.add_parser("evidence", help="check screenshot size, evidence type and no-shot cells")
+    p.add_argument("run_dir", nargs="?", default=None)
+    p.add_argument("--shots", default=None, help="check a shots/ directory instead of a run")
+    p.add_argument("--cells", default=None,
+                   help="CSV item,tool,file,type,caption; empty file => 无独立截图")
+    p.add_argument("--out", default=None, help="write the audit CSV here")
+    p.add_argument("--min-width", type=int, default=800)
+    p.add_argument("--min-height", type=int, default=400)
+    p.add_argument("--strict", action="store_true", help="exit non-zero on low-res/unlabeled/not-image")
+    p.set_defaults(func=cmd_evidence)
 
     a = ap.parse_args()
     if a.cmd == "launch" and not a.command and not a.app:

@@ -32,6 +32,7 @@ import base64
 import json
 import os
 import platform
+import struct
 import time
 from datetime import datetime
 from pathlib import Path
@@ -74,15 +75,48 @@ def _log(op, target, status, started, screenshot=None, detail=""):
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def page_ws(port, match=None, kind="page"):
-    tabs = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=5).json()
+def pick_target(tabs, match=None, kind="page"):
+    """Pick the main app page, not a pet/helper/empty target.
+
+    Electron apps expose several `page` targets (Qoder: desktop-pet first,
+    renderer second, an empty page third). `pages[0]` silently attached to the
+    pet and `text` came back empty. Score by URL shape and skip known helpers.
+    """
     kinds = ("page", "iframe") if kind == "any" else (kind,)
     pages = [t for t in tabs if t.get("type") in kinds]
     if match:
         pages = [t for t in pages if match in (t.get("url") or "")]
     if not pages:
+        return None
+
+    def score(tab):
+        url = (tab.get("url") or "").lower()
+        title = (tab.get("title") or "").strip()
+        value = 0
+        if "renderer" in url:
+            value += 5
+        if "index.html" in url:
+            value += 3
+        if url.startswith("app://") or url.startswith("file://"):
+            value += 2
+        if title:
+            value += 1
+        if any(bad in url for bad in ("desktop-pet", "fixed-surface", "devtools",
+                                      "background", "worker")):
+            value -= 10
+        if not url:
+            value -= 10
+        return value
+
+    return max(pages, key=score)
+
+
+def page_ws(port, match=None, kind="page"):
+    tabs = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=5).json()
+    target = pick_target(tabs, match, kind)
+    if not target:
         raise SystemExit("no %s target on port %s%s" % (kind, port, f" matching {match!r}" if match else ""))
-    return pages[0]["webSocketDebuggerUrl"]
+    return target["webSocketDebuggerUrl"]
 
 
 class CDP:
@@ -119,6 +153,18 @@ class CDP:
             text = (exc.get("exception") or {}).get("description") or exc.get("text") or "JS exception"
             raise RuntimeError(text.splitlines()[0])
         return res.get("result", {}).get("value")
+
+
+def png_size(path):
+    """Return (width, height) from a PNG IHDR, or (0, 0) if not a PNG."""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(24)
+        if len(head) >= 24 and head[:8] == b"\x89PNG\r\n\x1a\n":
+            return struct.unpack(">II", head[16:24])
+    except OSError:
+        pass
+    return 0, 0
 
 
 def main():
@@ -204,19 +250,20 @@ def main():
             pick = "hits[hits.length - 1]" if a.nth is None else f"hits[{a.nth}]"
             rect = c.eval(f"""(() => {{
               const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
-              let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
+              const label = e => (e.innerText || e.getAttribute('aria-label') || e.getAttribute('title') || '').trim();
+              let hits = all.filter(e => label(e) === {want} && e.offsetParent !== null);
               if (!hits.length) {{
                 // substring fallback: shortest label wins, otherwise "文件"
                 // matches "选择文件夹（可选）" and clicks the wrong control
-                hits = all.filter(e => (e.innerText || '').includes({want})
-                    && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null)
-                  .sort((x, y) => (x.innerText || '').length - (y.innerText || '').length);
+                hits = all.filter(e => label(e).includes({want})
+                    && label(e).length < {len(a.arg) + 12} && e.offsetParent !== null)
+                  .sort((x, y) => label(x).length - label(y).length);
               }}
               const el = {pick};
               if (!el) return null;
               el.scrollIntoView({{block:'center'}});
               const r = el.getBoundingClientRect();
-              return {{x: r.x + r.width / 2, y: r.y + r.height / 2, text: (el.innerText || '').slice(0, 40)}};
+              return {{x: r.x + r.width / 2, y: r.y + r.height / 2, text: label(el).slice(0, 40)}};
             }})()""")
             if not rect:
                 print("not found")
@@ -225,10 +272,11 @@ def main():
             if a.op == "clicktext":
                 c.eval(f"""(() => {{
                   const all = Array.from(document.querySelectorAll('button,a,div,span,li'));
-                  let hits = all.filter(e => (e.innerText || '').trim() === {want} && e.offsetParent !== null);
-                  if (!hits.length) hits = all.filter(e => (e.innerText || '').includes({want})
-                      && (e.innerText || '').length < {len(a.arg) + 12} && e.offsetParent !== null)
-                    .sort((x, y) => (x.innerText || '').length - (y.innerText || '').length);
+                  const label = e => (e.innerText || e.getAttribute('aria-label') || e.getAttribute('title') || '').trim();
+                  let hits = all.filter(e => label(e) === {want} && e.offsetParent !== null);
+                  if (!hits.length) hits = all.filter(e => label(e).includes({want})
+                      && label(e).length < {len(a.arg) + 12} && e.offsetParent !== null)
+                    .sort((x, y) => label(x).length - label(y).length);
                   {pick}.click();
                 }})()""")
             else:
@@ -240,7 +288,11 @@ def main():
             r = c.cmd("Page.captureScreenshot", {"format": "png"})
             open(a.arg, "wb").write(base64.b64decode(r["result"]["data"]))
             shot_path = a.arg
-            print(a.arg)
+            w, h = png_size(a.arg)
+            print(f"{a.arg} ({w}x{h})")
+            if w and (w < 800 or h < 400):
+                print(f"WARN: {w}x{h} is below 800x400; for evidence, crop to the control "
+                      f"or capture a larger window")
         elif a.op == "info":
             for t in requests.get(f"http://127.0.0.1:{a.port}/json/list", timeout=5).json():
                 print(t.get("type"), "|", t.get("title"), "|", t.get("url", "")[:100])
@@ -259,7 +311,11 @@ def main():
             out.parent.mkdir(parents=True, exist_ok=True)
             out.write_bytes(base64.b64decode(r["result"]["data"]))
             shot_path = str(out)
-            print(f"captured {out}")
+            w, h = png_size(out)
+            print(f"captured {out} ({w}x{h})")
+            if w and (w < 800 or h < 400):
+                print(f"WARN: {w}x{h} is below 800x400; for evidence, crop to the control "
+                      f"or capture a larger window")
     except Exception as e:
         status, detail = "error", f"{type(e).__name__}: {e}"
         raise

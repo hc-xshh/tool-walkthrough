@@ -2,6 +2,46 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.1（2026-10-28，目标页选择、证据补丁与题面禁区检查）
+
+- **`cdp.py` 目标页选择**：`/json/list` 里常有 `desktop-pet` / 浮层 / 空页排在前面，`pages[0]` 会连错（Qoder 0.4.9：`text` 读出来是空）。新增 `pick_target()` 按 URL 评分：`renderer` / `index.html` 优先，`desktop-pet` / `fixed-surface` / 空页降权；`--match` 仍可强制指定。`tests/test_cdp_pick.py` 覆盖 3 条。
+- **`cdp.py` 图标按钮**：`clickel` / `clicktext` 的匹配从只看 `innerText` 扩到 `aria-label` / `title`。Qoder「查看我的用量」这类只有 aria-label 的按钮现在可以直接点。
+- **`grade.py` 证据补丁**：`git status` / `git diff` 排除 `__pycache__`、`*.pyc`、`*.pyo`；补丁里不再出现二进制缓存 hunk，改动清单也不会被缓存文件撑大。
+- **`check_tasks.py`**：新增题面 / 禁区一致性检查。`forbidden: tests/**` 但题面没有「不要改 tests/」时 WARN，`--strict` 退 1。现存 L2、L3 两条警告——这是题面漏写，不是 agent 越界。
+- 测试：新增 `tests/test_cdp_pick.py`（3 条）；`code-eval/tools/selftest.py` 34/34。
+
+## v6.0（2026-10-27，证据工作簿校验）
+
+- **新增 `harness/xlsx_audit.py`**：检查同一图片跨格复用、图片超出单元格、Excel 行高超过 409.5pt、`未查到/无` 缺少【缺失证据】、`有` 误用缺失证据。
+- **新增 `tests/test_xlsx_audit.py`**：覆盖 clean book、复用图、行高超限、图片超高、缺失证据标注、状态冲突。
+- **METHOD.md §14 证据工作簿硬规则**：一图一格、图内不画标注、行高/列宽换算、多屏左右并排、看图后再写 caption。
+- 背景：Codex/TRAE 批量表出现一张 help 图被 9–13 行复用、图内 caption 挡内容、行高超过 Excel 上限导致图片溢出。
+
+## v5.9 — 2026-10-26（证据可读性与归因）
+
+- **METHOD §8.1 证据可读性与归因**：最小可读尺寸（报告 ≥800×400，单元格 ≥420×210）、裁到控件、每图标证据类型、账号/额度限制不进问题清单、同屏证据要标注、没有独立截图就写「无独立截图」、截完先自检。
+- **METHOD §9.1 多 Electron 窗口**：同名「Agent」窗口会抓错图；记录 `hwnd + pid + title + rect`、必要时最小化其它窗口、focus 后仍超时先查遮挡；`prepare --force` 前先释放工作区占用（Cursor 的 `.git/cursor/crepe/index.bin`）。
+- **`templates/report.md`**：头部增加「测试账号 / 套餐 / 额度」；问题模板与 backlog 增加「证据类型」字段。
+- **`templates/tool-profile.md`**：事实卡增加「测试账号 / 套餐 / 额度」。
+- **`walkthrough-harness/tool_descriptions/tool_guidance.md`**：新增「Screenshots and attribution」一节，覆盖裁剪、尺寸、证据类型、账号/额度归因、同屏证据、空白页、窗口遮挡、重绘卡。
+- **`code-eval/tools`**：补 `drive_cursor.py`（CDP + ProseMirror）、`drive_codex.py`（`codex exec --json` / `resume --last`）、`run_tool.py`（`--driver --tasks --reps --run --force`）。
+- **`wt.py evidence`**：扫描 `shots/` / `screens/` 或 `--cells` CSV，检查尺寸（默认 ≥800×400）、`evidence.json` / `captions.json` 里的证据类型；`--strict` 对低分辨率、未标注、非图片返回 1；空文件输出 `无独立截图`（`no-shot`），不生成假图。
+- **`cdp.py shot` 尺寸自检**：保存后打印 `WxH`，低于 800×400 直接 WARN，提示裁到控件或放大窗口。
+- **`code-eval/tools/preflight.py`**：检查账号/额度/同名窗口；Cursor/Qoder/Trae 走 CDP 文本标记，Codex 读 `codex --version` 与 `~/.codex/config.toml`；`blocked` 退出 2。
+- **`run_tool.py` / `run_suite.py --preflight`**：读 preflight JSON，`blocked` 时在跑任务前退出 2，避免把额度/账号问题记成 `failed`。
+- **测试**：新增 `tests/test_evidence.py`（尺寸、metadata、no-shot）与 `tests/test_preflight.py`（quota/账号标记）；现有 80 条 harness 测试通过。
+
+## v5.8 — 2026-10-26（Qoder CN 之后，把踩过的坑收回 harness）
+
+- **launch 剥离 `ELECTRON_RUN_AS_NODE`**：agent 宿主常把它导出给子进程，Electron 应用会退化成 Node——启动即退出（exit 9）、`--version` 打出 Node 版本、CDP 端口永不打开。`wt.py launch` 现在对子进程移除并打印一行说明；`preflight` 发现该变量时 WARN。（Qoder CN 0.4.9 第一轮就栽在这里。）
+- **新增 `wt.py focus <进程名>`**：Chromium 会节流被遮挡的窗口，`cdp.py text` 仍可用但 `cdp.py shot` 会超时。Windows 用 `harness/focus.ps1`（ShowWindow + SetForegroundWindow），macOS 用 AppleScript，Linux 用 `xdotool windowactivate`。
+- **launch 的默认日志路径**：`/tmp/...` 在 Windows 上会落到 `D:\tmp`，改用 `tempfile.gettempdir()`。
+- **METHOD §9 补四条 Electron 经验**：先清 `ELECTRON_RUN_AS_NODE`、遮挡先 focus、原生菜单不在 DOM/UIA 里、审批可能是 split button（点主体只展开菜单）。
+- **METHOD §8 补证据命名**：`events.jsonl` 按绝对路径记截图，截完别改名；要改编号就留旧名别名，不要回头改日志。
+- **`harness/pick-folder.ps1`**：把 Qoder 那次写的原生文件夹选择器助手从 `code-eval/tools` 挪进 harness（按进程 + `#32770` 找窗口，`WM_SETTEXT` 填路径，`BM_CLICK` 点确认），任何走查都能复用。
+- **`walkthrough-harness` 文档**：`tool_guidance.md` 增加 Windows 环境、原生菜单/审批、证据路径三节；`scripts/README.md` 登记 `focus.ps1` 与 `pick-folder.ps1`；新增 `tests/test_launch_env.py`（4 条）。
+- 版本对齐：`METHOD.md` 头部停在 v5.3 而 changelog 已到 v5.7，这次一并更新到 v5.8。
+
 ## v5.7 — 2026-10-23（全量 review 后的修补）
 
 - **Python 3.9 兼容**：`prepare.py` 的 `shutil.rmtree(onexc=...)` 只有 3.12+ 支持，改成带 `onerror` 回退的包装（README 一直写的是 3.9+）。

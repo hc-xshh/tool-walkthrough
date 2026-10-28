@@ -1,7 +1,7 @@
-# 走查方法 v5.3
+# 走查方法 v6.1
 
-- 方法版本：v5.3
-- 最后更新：2026-10-22
+- 方法版本：v6.1
+- 最后更新：2026-10-28
 - 变更记录：见 [`CHANGELOG.md`](CHANGELOG.md)
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
@@ -134,6 +134,8 @@ python3 harness/wt.py coverage runs/<run>     # 列出没有归属的控件，�
 - **实景任务（至少 1 条）**：真实仓库 / 项目目录 + 用户会说的话 + 可独立验证的产物；不要只点 UI 或只问一句闲聊
 
 每个任务写：**起始状态 / 成功标准 / 观察点**。任务用用户会说的话写，不写「点设置页第三个 tab」。
+
+**题面必须写出禁区**：spec 里的 `forbidden` 路径（`tests/`、`data/`）要在 prompt 里用「不要改 …」写明；`python code-eval/tools/check_tasks.py --strict` 在跑批前检查。题面没说、spec 却判越界，会把「题面漏写」记成 agent 的问题（L2/L3 踩过：Codex 的 4 次 `scope_violation` 是任务书没写，不是产品越界）。
 
 ### Step 4 执行与取证
 
@@ -313,6 +315,7 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 ## 8. 证据规范
 
 - 命名：`<task>-<step>-<state>.png`（如 `t4-02-after-submit.png`）
+- **文件名是证据的一部分**：`screens/`、`shots/` 被 `events.jsonl` 按绝对路径记录，截完不要改名；要改编号就保留旧名别名（复制一份），否则 `audit` 直接 `shot files FAIL`。改名后不要回头改日志
 - 事件时间线：`runs/<run>/events.jsonl` 记录每次截图 / 点击 / OCR / 启动的时间、结果与耗时；报告里的步骤编号应与它对应，`wt.py audit` 会核对证据文件是否存在、报告里的图片引用、`click` 后是否补了截图、有没有 error 事件，以及 `harness.json` 是否存在（不检查步骤编号连续性）
 - 任务 trace：`runs/<run>/trace/task-trace.md` 记录项目、prompt、工具调用与结果；`logs/task-trace.txt` 保留展开后的原文；截图至少含「工具折叠」和「工具展开」两张
 - 动作前后成对；状态变化必须有第二张图，不能只截结果
@@ -321,6 +324,18 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 - 原始日志不改写；产物保留原文件；凭据、token、个人信息不入库
 - 截图里的账号名、手机号、收款码在**交付件**里必须涂白：`wt.py report --redact X,Y,W,H`（可按图单独配 `shots/captions.json` 的 `redact`）；涂白是改像素，不是盖一层白块
 - 证据目录跨报告形态不变：markdown / PDF / 文档 / 幻灯片都回指同一份 `shots/`
+
+### 8.1 证据可读性与归因（2026-10-26 补）
+
+- **最小可读尺寸**：报告 / 表格里的证据图不小于 800×400；单元格内嵌图不小于 420×210。整窗 1500px 缩到 300×150 时，12px 的 UI 字只剩 3px，等于没截
+- **裁到控件**：只保留能证明该条结论的面板 / 菜单 / 消息卡；整窗图另存，上下文图不能当控件证据
+- **每张图写证据类型**：`实机-正常` / `实机-账号限制` / `实机-额度限制` / `DOM 文本` / `文档` / `重绘` / `无独立截图`
+- **账号限制、额度限制不是产品缺陷**：只能写进「方法与限制」，不能进问题清单，也不能挂在产品能力格上
+- **同一张图服务多行时**必须标「同屏证据」，写清它证明了哪一行；不能把一张欢迎页当作 Rules / SSH / WSL 的逐行证据
+- **没有独立截图就写「无独立截图」**，不拿近似的图硬凑；表格里没有图就是没有图
+- **截完先看**：纯白、纯黑、加载中、登录页、额度页都不是该功能的证据；等内容 idle 再截
+- **重绘的终端卡 / DOM 文本卡**要标「非截图」；能截真实窗口就不要重绘
+- **交付前跑** `wt.py evidence --strict <run>`：低于 800×400、未标证据类型、非图片都会失败；`--cells cells.csv` 可把没有图的格子写成「无独立截图」（`no-shot`），不用假图占位
 
 ## 9. 环境与安装验证
 
@@ -342,12 +357,26 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 
 - 启动加 `--remote-debugging-port=9339`，再用 `harness/cdp.py`
 - 读界面：`cdp.py text`；点控件：`cdp.py clicktext "登录"`；React 事件点不动时用 `cdp.py clickel`（真实鼠标）
+- **一端口多 target 时先选主页面**：Electron 常把桌面宠物 / 浮层 / 空白页排在 `/json/list` 前面，`pages[0]` 会连错（Qoder 0.4.9：`text` 读出来是空）。`cdp.py` 现在按 URL 评分：`renderer` / `index.html` 加分，`desktop-pet` / `fixed-surface` / 空页减分；`--match` 仍可强制指定
+- **图标按钮没有 innerText**：`clickel` / `clicktext` 会同时匹配 `aria-label` / `title`；仍点不到时用 `click '[aria-label="…"]'`
 - 截图：`cdp.py shot out.png` 只截渲染层
+- **先清 `ELECTRON_RUN_AS_NODE`**：agent 宿主常把它导出给子进程，Electron 会退化成 Node——现象是启动即退出（exit 9）、`--version` 打出 Node 版本、CDP 端口永远不开。`wt.py launch` 已对子进程剥离并提示，`preflight` 会 WARN；手工启动时自己 unset
+- **窗口被遮挡时先 `wt.py focus <进程名>`**：Chromium 会节流不可见窗口，`cdp.py text` 还能用，但 `shot` 会超时。批量跑任务前先聚焦一次，别把超时当产品问题
 - 登录态：Electron 常放在 `~/.<app>` 或 `~/.config/<App>`；同 HOME 挂到隔离桌面即可复用。token 走 keyring 时，必须带真实 `DBUS_SESSION_BUS_ADDRESS` 与 `XDG_RUNTIME_DIR`
 - 单实例锁：同一 HOME 先关掉真实桌面实例，再在 Xvfb 里起
 - 连不上先看 403：Chromium 拒绝默认 Origin，客户端需 `suppress_origin=True`
 - 选项文本常带序号（`1\n允许读取`），精确匹配点不到；用 `cdp.py clickel 允许读取 --nth 1` 指定第 2 个匹配
+- **原生菜单不在 DOM 也不在 UIA 树里**：标题栏菜单（文件/编辑/…）用真实鼠标打开，再截整屏读条目；不要因为 `cdp.py text` 看不到就判定「菜单是空的」
+- **审批按钮可能是 split button**：点主体只展开「允许一次 / 本次任务允许」，要再点一次菜单项。用真实指针（`wt.py click` 或 `cdp.py clickxy`），DOM `.click()` 只会反复展开菜单
 - 只有 CDP 拿不到（原生弹窗、文件选择器、托盘）时，才回退 `ffmpeg` 截图 + `tesseract`
+
+### 9.1 多 Electron 窗口与同名窗口（2026-10-26 补）
+
+- 同一台机器可能同时跑多个 Electron 应用，标题都可能叫「Agent」；整屏 / `PrintWindow` 会抓到最上层那个。截图前记录 `hwnd + pid + title + rect`，必要时最小化其它窗口，再 `wt.py focus`；抓完核对图里的产品名
+- `cdp.py shot` 超时先 focus；focus 后仍超时，检查是否被同坐标的另一个窗口盖住，不要直接判产品卡死
+- 原生文件选择器用 `harness/pick-folder.ps1`；`prepare.py --force` 前先关掉被测应用对该工作区的占用（Cursor 的 `.git/cursor/crepe/index.bin` 会锁），或换新 workdir
+- 截图后立刻 `read_image` 自检：图里是不是目标产品、目标页面、目标状态；不对就重截，不要把错图带进报告
+- 跑 code-eval 前先 `preflight.py --tool <cursor|qoder|trae|codex>`：额度用尽、账号不能用模型、抓错窗口都是 `blocked`，记「未测」，不是 `failed`；`run_tool.py --preflight` 会在跑任务前退出 2
 
 ## 10. 边界（写进报告，不要省）
 
@@ -379,3 +408,25 @@ Google Research 的 Harness²（`google-research/harness2`，Apache 2.0）把 ag
 - Maze, *How to analyze and report usability test results*（摘要/方法/优先级/建议/附录）https://maze.co/guides/usability-testing/analysis
 - Builders Camp, *Usability test report template*（前三 + what worked + backlog）https://builderscamp.com/guides/templates/usability-test-report-template
 - DHS, *Reporting on Usability Testing*（Critical / Serious / Minor）https://www.dhs.gov/cx/learning-trainings/cx-learning/usability-testing-topics/reporting-on-usability-testing
+
+## 14. 证据工作簿硬规则（2026-10-27 增补）
+
+以下规则来自 Codex/Qoder/TRAE/Cursor 走查中实际踩过的坑，已固化为 `harness/xlsx_audit.py`：
+
+1. **一图一格，禁止复用**：同一张图不得出现在两个单元格。复用会让“有图”变成假覆盖，实际行的图与结论对不上。
+2. **图内不画标注**：说明只放单元格的图注列。把 caption 画进图片底部会挡住截图内容。
+3. **Excel 行高上限 409.5pt**：任何 `row height > 409.5` 都会被 Excel 截断，图片必然溢出。单行图片高度应 ≤ 行高换算后的 px（`pt * 96/72`）。
+4. **列宽也要算**：图片宽度必须 ≤ 目标列宽换算后的 px；否则会横向压到下一列。
+5. **缺失证据必须标明**：状态为 `未查到/无` 的格，图注必须以 `【缺失证据】` 开头；不得把 help/设置页写成功能页。
+6. **状态 `有` 不得使用缺失证据**：反过来也要检查，避免 caption 与状态冲突。
+7. **多屏截不全时左右并排**：不要竖着拼成超过行高的长图；单张图放不下时，用 2–3 张并排，分别在图注里写 `1/2`、`2/2`。
+8. **逐格核对三件事**：图片实际内容、状态、图注必须一致。先看图，再写 caption，不能先写结论再找图。
+
+检查命令：
+
+```bash
+python harness/xlsx_audit.py runs/<run>/<book>.xlsx --sheet "<sheet>" --expect-images 45
+```
+
+退出码 1 表示存在复用图、超格、缺失证据标注缺失等问题。
+

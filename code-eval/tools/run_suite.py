@@ -44,9 +44,23 @@ def main():
     ap.add_argument("--tasks", required=True)
     ap.add_argument("--reps", type=int, default=3)
     ap.add_argument("--run", required=True)
+    ap.add_argument("--preflight", default=None,
+                    help="preflight.json from preflight.py; blocked => do not run")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--only-missing", action="store_true")
     a = ap.parse_args()
+
+    if a.preflight:
+        pf = Path(a.preflight).expanduser().resolve()
+        if pf.exists():
+            data = json.loads(pf.read_text(encoding="utf-8-sig"))
+            print(f"preflight {data.get('tool')}: {data.get('status')} — {data.get('reason') or ''}")
+            if data.get("status") == "blocked":
+                print("BLOCKED: fix the account/quota/window issue before running; "
+                      "a blocked run is 'not tested', not 'failed'")
+                raise SystemExit(2)
+        else:
+            print(f"WARN: preflight file not found: {pf}; continuing without quota check")
 
     run_dir = Path(a.run).resolve()
     (run_dir / "results").mkdir(parents=True, exist_ok=True)
