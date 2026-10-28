@@ -25,7 +25,6 @@ class EvidenceTest(unittest.TestCase):
                     strict=True, run_dir=None)
         base.update(kw)
         return type("A", (), base)
-
     def test_png_size_reads_ihdr(self):
         with tempfile.TemporaryDirectory() as d:
             p = pathlib.Path(d) / "x.png"
@@ -72,6 +71,44 @@ class EvidenceTest(unittest.TestCase):
             self.assertEqual(rc, 0)
             self.assertIn("no-shot", out.getvalue())
             self.assertIn("无独立截图", out.getvalue())
+
+
+    @unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+    def test_jpeg_size_is_read(self):
+        with tempfile.TemporaryDirectory() as d:
+            p = pathlib.Path(d) / "x.jpg"
+            Image.new("RGB", (640, 480), "white").save(p, "JPEG")
+            self.assertEqual(wt.png_size(p), (640, 480))
+
+    @unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+    def test_shots_dir_finds_captions_beside_the_images(self):
+        """--shots runs/x/shots 时 captions.json 就在 shots/ 里，不是 shots/shots/。"""
+        with tempfile.TemporaryDirectory() as d:
+            shots = pathlib.Path(d) / "shots"
+            shots.mkdir()
+            Image.new("RGB", (800, 400), "white").save(shots / "a.png")
+            (shots / "captions.json").write_text(
+                '{"a.png":{"type":"实机-正常","caption":"ok"}}', encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = wt.cmd_evidence(self._args(shots=str(shots), strict=True))
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertIn("实机-正常", out.getvalue())
+
+    @unittest.skipUnless(HAVE_PIL, "Pillow not installed")
+    def test_run_dir_is_taken_from_the_positional_argument(self):
+        """文档里的 `wt.py evidence --strict runs/<run>` 曾经完全忽略这个路径。"""
+        with tempfile.TemporaryDirectory() as d:
+            root = pathlib.Path(d)
+            (root / "shots").mkdir()
+            Image.new("RGB", (800, 400), "white").save(root / "shots" / "a.png")
+            (root / "shots" / "captions.json").write_text(
+                '{"a.png":{"type":"实机-正常","caption":"ok"}}', encoding="utf-8")
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                rc = wt.cmd_evidence(self._args(run_dir=str(root), strict=True))
+            self.assertEqual(rc, 0, out.getvalue())
+            self.assertIn("实机-正常", out.getvalue())
 
 
 if __name__ == "__main__":

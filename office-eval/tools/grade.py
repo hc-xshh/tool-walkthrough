@@ -12,6 +12,7 @@ import argparse
 import fnmatch
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
@@ -46,7 +47,7 @@ def main():
     ap.add_argument("--task", required=True)
     ap.add_argument("--workdir", required=True)
     ap.add_argument("--out", required=True)
-    ap.add_argument("--python", default=sys.executable)
+    ap.add_argument("--python", default=os.environ.get("OFFICE_PYTHON") or sys.executable)
     ap.add_argument("--duration", type=float, default=None)
     ap.add_argument("--interventions", type=int, default=0)
     ap.add_argument("--timeout", type=int, default=180)
@@ -84,27 +85,40 @@ def main():
         if accept_dst.exists():
             shutil.rmtree(accept_dst)
         shutil.copytree(accept_src, accept_dst)
-        probe = subprocess.run(
-            [a.python, str(CODE_EVAL / "tools" / "accept_run.py"), "_accept"],
-            cwd=str(workdir),
-            capture_output=True,
-            text=True,
-            encoding="utf-8",
-            errors="replace",
-            timeout=a.timeout,
-        )
         try:
-            payload = json.loads(probe.stdout.strip().splitlines()[-1])
-        except (ValueError, IndexError):
+            probe = subprocess.run(
+                [a.python, str(CODE_EVAL / "tools" / "accept_run.py"), "_accept"],
+                cwd=str(workdir),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                errors="replace",
+                timeout=a.timeout,
+            )
+        except subprocess.TimeoutExpired:
+            # 超时要写成一条验收失败，不能让异常穿过 main()——那会把 --out 一起丢掉。
             payload = {
                 "total": 0,
                 "passed": 0,
                 "failures": [{
                     "test": "<probe>",
                     "status": "error",
-                    "message": (probe.stderr or probe.stdout)[-1200:],
+                    "message": f"timeout after {a.timeout}s",
                 }],
             }
+        else:
+            try:
+                payload = json.loads(probe.stdout.strip().splitlines()[-1])
+            except (ValueError, IndexError):
+                payload = {
+                    "total": 0,
+                    "passed": 0,
+                    "failures": [{
+                        "test": "<probe>",
+                        "status": "error",
+                        "message": (probe.stderr or probe.stdout)[-1200:],
+                    }],
+                }
     finally:
         shutil.rmtree(accept_dst, ignore_errors=True)
 

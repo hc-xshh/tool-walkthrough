@@ -323,13 +323,46 @@ def cmd_click(a):
 
 
 
+PNG_MAGIC = bytes.fromhex("89504e470d0a1a0a")
+
+
 def png_size(path):
-    """Return (width, height) from a PNG IHDR, or (0, 0) if not a PNG."""
+    """Return (width, height) from a PNG or JPEG header, or (0, 0) if neither.
+
+    `evidence` globs jpg/jpeg as well, so decoding only PNG silently marked
+    every JPEG screenshot as `not-image` and failed `--strict`.
+    """
     try:
         with open(path, "rb") as f:
             head = f.read(24)
-        if len(head) >= 24 and head[:8] == b"\x89PNG\r\n\x1a\n":
-            return struct.unpack(">II", head[16:24])
+            if len(head) >= 24 and head[:8] == PNG_MAGIC:
+                return struct.unpack(">II", head[16:24])
+            if head[:2] != b"\xff\xd8":
+                return 0, 0
+            f.seek(2)
+            while True:
+                b = f.read(1)
+                while b and b != b"\xff":
+                    b = f.read(1)
+                while b == b"\xff":
+                    b = f.read(1)
+                if not b:
+                    return 0, 0
+                marker = b[0]
+                if marker == 0x01 or marker == 0xD8 or 0xD0 <= marker <= 0xD7:
+                    continue
+                seg = f.read(2)
+                if len(seg) < 2:
+                    return 0, 0
+                length = struct.unpack(">H", seg)[0]
+                if marker in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7,
+                              0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                    data = f.read(5)
+                    if len(data) < 5:
+                        return 0, 0
+                    height, width = struct.unpack(">HH", data[1:5])
+                    return width, height
+                f.seek(max(length - 2, 0), 1)
     except OSError:
         pass
     return 0, 0
@@ -340,6 +373,8 @@ def _evidence_meta(root):
     candidates = [root / "evidence.json", root / "shots" / "captions.json"]
     if root.name in ("shots", "screens"):
         candidates.append(root.parent / "evidence.json")
+        # --shots <run>/shots 时 captions.json 就在这一层，别去找 shots/shots/
+        candidates.append(root / "captions.json")
     for p in candidates:
         if not p.exists():
             continue
@@ -380,6 +415,10 @@ def cmd_evidence(a):
         root = Path(a.cells).expanduser().resolve().parent
     elif a.shots:
         root = Path(a.shots).expanduser().resolve()
+    elif getattr(a, "run_dir", None):
+        # 文档写的是 `wt.py evidence --strict runs/<run>`；位置参数一直没被读，
+        # 只有 WALKTHROUGH_RUN 生效，显式路径会被忽略。
+        root = Path(a.run_dir).expanduser().resolve()
     else:
         root = resolve_run(a)
     if not root:

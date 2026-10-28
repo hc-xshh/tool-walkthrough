@@ -2,6 +2,14 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.3（2026-10-28，evidence 与办公判分的四个真 bug）
+
+- **`wt.py evidence` 的位置参数生效**：`evidence --strict runs/<run>` 此前只认 `WALKTHROUGH_RUN`，显式路径被忽略（没设环境变量时直接报「needs a run dir」）。现在 `run_dir` 优先于环境变量。
+- **`--shots runs/x/shots` 能读到同层 `captions.json`**：此前只找 `shots/captions.json` 和 `shots/shots/captions.json`，结果每条截图都标「未标注」，`--strict` 假失败。
+- **`png_size()` 支持 JPEG**：`evidence` 会 glob `*.jpg` / `*.jpeg`，但尺寸探测只认 PNG，导致合格截图被判 `not-image`。现在按 SOF 段解出宽高。
+- **`office-eval/tools/grade.py`**：`--python` 现在真的读 `OFFICE_PYTHON`（文档一直让人设它，代码没读，照做无效）；验收探测超时写成一条失败记录，不再让 `TimeoutExpired` 穿过 `main()`、把 `--out` 一起丢掉。
+- 测试：`tests/test_evidence.py` 新增 3 条（JPEG 尺寸、`--shots` 同层 captions、位置参数 run_dir）；共 97 条。
+
 ## v6.2（2026-10-28，判分之外的独立评审 + 三处可复现性修补）
 
 - **新增 `code-eval/tools/review.py`**：对一次判分结果里 `changes.added` / `changes.modified` 的文件跑 Alibaba Open Code Review（`ocr scan --format json`），产出 `<result>.review.json`。评审不是判分：`status=unavailable|timeout|error` 时判分结果照旧，没装 ocr 也退出 0。`run_tool.py --review` 可在跑批时顺带打开。
