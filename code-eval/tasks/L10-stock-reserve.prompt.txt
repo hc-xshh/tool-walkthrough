@@ -1,0 +1,29 @@
+项目路径：{workdir}
+
+库存预占服务最近出了四个问题：
+
+1. 大促并发时同一个 SKU 卖超了，available 变成负数；
+2. 客户端没收到响应就重试，同一个 `request_id` 被重复预占、库存扣了两次；
+3. 服务重启后，之前预占的库存「回来了」，客户端重试又占一次；
+4. `qty` 传 0、负数或字符串时接口直接 500，而不是明确的错误。
+
+要求：
+
+- `POST /reserve`，body `{"sku": "...", "qty": 1, "request_id": "..."}`，成功 201，
+  返回 `{"reservation_id", "sku", "qty"}`；
+- 同一个 `request_id` 无论重试多少次（包括并发重试），只能产生一笔预占，返回同一个
+  `reservation_id`，库存只扣一次；
+- 库存不足返回 409，body `{"error": "insufficient_stock"}`；
+- `qty` 不是正整数（含 0、负数、字符串、布尔值）、缺 `sku` 或 `request_id` 时返回 400，
+  body `{"error": "..."}`；
+- 并发请求下成功预占的总量不得超过初始库存，`available` 不得为负；
+- 预占必须落盘：进程重启后 `GET /stock/<sku>` 的 `available` / `reserved` 保持正确，
+  重放之前的 `request_id` 仍返回原来的 `reservation_id`；
+- `GET /stock/<sku>` 返回 `{"sku", "available", "reserved"}`。
+
+约束：
+
+- 不要改 `tests/` 和 `data/`；现有测试必须继续通过；
+- 不要引入第三方依赖，只用标准库。
+
+改完跑 `python -m unittest discover -s tests -v`，并说明改了哪几个文件、每处为什么必须一起改。

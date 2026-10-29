@@ -1,0 +1,58 @@
+{
+  "id": "L11-report-throughput",
+  "level": 11,
+  "title": "性能预算：8000 行报表从二十秒压到 3 秒内",
+  "fixture": "fixtures/L11-report-throughput/repo",
+  "accept": "accept/L11-report-throughput",
+  "prompt": "tasks/L11-report-throughput.prompt.txt",
+  "allowed": [
+    "reports/**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
+  "visible": {
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
+    "timeout": 180
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "周末回落工作日汇率、整分 HALF_UP、top3 排序不变",
+      "tests": [
+        "test_weekend_uses_previous_business_day_and_half_up"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "8000 行输出与改造前口径逐字段一致",
+      "tests": [
+        "test_large_report_matches_reference"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "8000 行单进程 3 秒内完成",
+      "tests": [
+        "test_large_report_within_budget"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "未知币种仍然退出 2",
+      "tests": [
+        "test_unknown_currency_exits_2"
+      ]
+    }
+  ],
+  "timebox_s": 1800
+}

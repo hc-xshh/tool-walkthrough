@@ -8,12 +8,67 @@
     "tasks/L5-notes-sync.prompt.txt",
     "tasks/L6-notes-soft-delete-r2.prompt.txt"
   ],
-  "allowed": ["notes/**"],
-  "forbidden": ["tests/**", "data/**"],
+  "allowed": [
+    "notes/**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
   "timebox_s": 2400,
-  "idle_s": 90
+  "idle_s": 90,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "删除保留记录并写 deleted_at，重复删除只计一次",
+      "tests": [
+        "delete_keeps_record_with_deleted_at",
+        "deleting_twice_counts_once"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "旧版墓碑迁移成软删除记录",
+      "tests": [
+        "legacy_tombstones_are_migrated"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "墓碑/复活/revision 规则与第一轮一致",
+      "tests": [
+        "stale_upsert_does_not_revive",
+        "newer_upsert_revives",
+        "revision_breaks_timestamp_tie",
+        "older_upsert_still_skipped"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "重放幂等",
+      "tests": [
+        "replay_is_idempotent"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "非法批次不动文件；CLI 列表默认隐藏已删除",
+      "tests": [
+        "invalid_batch_keeps_files_untouched",
+        "cli_list_hides_deleted_by_default"
+      ]
+    }
+  ]
 }

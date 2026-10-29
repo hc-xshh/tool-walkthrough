@@ -244,13 +244,15 @@ def main():
     last_change = started
     ok = True
 
-    def run_grade():
+    def run_grade(status="ok"):
         grade_cmd = [
             sys.executable, str(HERE / "grade.py"),
             "--task", a.task, "--workdir", str(workdir), "--before", str(before),
             "--out", a.out, "--rep", str(a.rep), "--tool", a.tool,
             "--duration", str(round(last_change - started, 1)),
             "--interventions", str(approvals),
+            "--rounds", str(index),
+            "--status", status,
         ]
         graded = subprocess.run(grade_cmd, capture_output=True, text=True, encoding="utf-8")
         print((graded.stdout or "").strip())
@@ -322,7 +324,8 @@ def main():
             finished=round_ok,
             approvals=round_approvals,
         )
-        result = run_grade()
+        status = "timeout" if (not round_ok and time.time() - started >= a.timebox - 5) else "ok"
+        result = run_grade(status)
 
     took = round(time.time() - started, 1)
     measured = round(last_change - started, 1) if last_change else took

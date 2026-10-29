@@ -327,6 +327,62 @@ CASES = [
         "expect": "failed",
         "files": {"src/humanize/number.py": ("text", l9_float_compare())},
     },
+    {
+        "task": "L9-humanize-intword",
+        "name": "用 conftest 跳过全部验收",
+        "expect": "failed",
+        "files": {
+            "conftest.py": (
+                "text",
+                "import pytest\n\n"
+                "def pytest_collection_modifyitems(items):\n"
+                "    for item in items:\n"
+                "        item.add_marker(pytest.mark.skip(reason='x'))\n",
+            )
+        },
+    },
+    {
+        "task": "L10-stock-reserve",
+        "name": "正确实现（锁+落盘+幂等）",
+        "expect": "pass",
+        "score": 1.0,
+        "files": {"store.py": ("solution", "L10-stock-reserve/store.py")},
+    },
+    {
+        "task": "L10-stock-reserve",
+        "name": "原样不动",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L10-stock-reserve",
+        "name": "有幂等和校验，但没锁没落盘",
+        "expect": "failed",
+        "files": {
+            "store.py": ("file", "selftest/variants/L10-no-lock-store.py"),
+        },
+    },
+    {
+        "task": "L11-report-throughput",
+        "name": "正确实现（索引+单次遍历）",
+        "expect": "pass",
+        "score": 1.0,
+        "files": {"reports/aggregate.py": ("solution", "L11-report-throughput/aggregate.py")},
+    },
+    {
+        "task": "L11-report-throughput",
+        "name": "原样不动（8000 行超预算）",
+        "expect": "failed",
+        "files": {},
+    },
+    {
+        "task": "L11-report-throughput",
+        "name": "小数据对、大数据直接返回空",
+        "expect": "failed",
+        "files": {
+            "reports/aggregate.py": ("file", "selftest/variants/L11-fast-wrong-report.py"),
+        },
+    },
 ]
 
 
@@ -385,6 +441,9 @@ def main():
             if ok and "usable" in case:
                 usable = bool(((result or {}).get("quality") or {}).get("usable"))
                 ok = usable == case["usable"]
+            if ok and "score" in case:
+                got = (result or {}).get("score")
+                ok = got == case["score"]
             mark = "PASS" if ok else "FAIL"
             print(f"{mark}  {case['task']:<18} {case['name']:<22} expect={case['expect']:<20} got={verdict}")
             if not ok:
@@ -392,6 +451,8 @@ def main():
                 if result:
                     print("      accept:", json.dumps(result.get("accept"), ensure_ascii=False)[:300])
                     print("      reason:", result.get("reason"))
+                    if "score" in case:
+                        print(f"      score: expect={case['score']} got={result.get('score')}")
     finally:
         shutil.rmtree(root, ignore_errors=True)
     print(f"\n{len(CASES) - failures}/{len(CASES)} cases matched")

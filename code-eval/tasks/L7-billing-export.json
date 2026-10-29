@@ -5,11 +5,51 @@
   "fixture": "fixtures/L7-billing-export/repo",
   "accept": "accept/L7-billing-export",
   "prompt": "tasks/L7-billing-export.prompt.txt",
-  "allowed": ["app/**"],
-  "forbidden": ["tests/**", "data/**"],
+  "allowed": [
+    "app/**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
-  "timebox_s": 1800
+  "timebox_s": 1800,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "表头稳定，作废/退款/取消单都不丢且带标记",
+      "tests": [
+        "header_is_stable",
+        "void_rows_are_kept_and_flagged",
+        "refunded_and_cancelled_are_not_dropped"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "金额两位小数、行序不变、unicode 客户名不坏",
+      "tests": [
+        "amount_keeps_two_decimals",
+        "order_is_preserved",
+        "unicode_customer_survives"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "CLI 导出包含作废单",
+      "tests": [
+        "cli_export_includes_void_rows"
+      ]
+    }
+  ]
 }

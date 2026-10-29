@@ -15,22 +15,59 @@ class JsonResult(unittest.TestResult):
     def __init__(self):
         super().__init__()
         self.details = []
+        self.cases = []
+        self._index = {}
 
     def _record(self, test, kind, err):
         text = self._exc_info_to_string(err, test) if err else ""
+        name = self._short(test)
         self.details.append(
             {
-                "test": self._short(test),
+                "test": name,
                 "status": kind,
                 "message": text[-1200:],
             }
         )
+        idx = self._index.get(name)
+        if idx is not None:
+            self.cases[idx]["status"] = kind
+
+    def startTest(self, test):
+        super().startTest(test)
+        name = self._short(test)
+        self._index[name] = len(self.cases)
+        self.cases.append({"test": name, "status": "passed"})
+
+    def addSkip(self, test, reason):
+        super().addSkip(test, reason)
+        name = self._short(test)
+        idx = self._index.get(name)
+        if idx is not None:
+            self.cases[idx]["status"] = "skipped"
+
+    def addSubTest(self, test, subtest, err):
+        super().addSubTest(test, subtest, err)
+        if err is not None:
+            kind = "fail" if err[0] is not None and issubclass(err[0], AssertionError) else "error"
+            self._record(test, kind, err)
+
+    def addExpectedFailure(self, test, err):
+        super().addExpectedFailure(test, err)
+        name = self._short(test)
+        idx = self._index.get(name)
+        if idx is not None:
+            self.cases[idx]["status"] = "xfail"
+
+    def addUnexpectedSuccess(self, test):
+        super().addUnexpectedSuccess(test)
+        name = self._short(test)
+        idx = self._index.get(name)
+        if idx is not None:
+            self.cases[idx]["status"] = "xpass"
 
     @staticmethod
     def _short(test):
-        ident = test.id() if hasattr(test, "id") else str(test)
-        parts = ident.split(".")
-        return ".".join(parts[-2:]) if len(parts) >= 2 else ident
+        return test.id() if hasattr(test, "id") else str(test)
 
     def addFailure(self, test, err):
         super().addFailure(test, err)
@@ -55,22 +92,42 @@ def main():
             pattern=a.pattern,
             top_level_dir=os.getcwd(),
         )
-        suite.run(result)
     except Exception as exc:  # 导入失败也算不通过，别让判分脚本崩掉
         print(json.dumps({"total": 0, "passed": 0, "failures": [
             {"test": "<discover>", "status": "error", "message": f"{type(exc).__name__}: {exc}"}
         ]}, ensure_ascii=False))
         return 0
+    try:
+        suite.run(result)
+    except Exception as exc:  # 跑挂了也要把已跑完的结果交出去
+        result.cases.append({"test": "<run>", "status": "error"})
+        result.details.append({"test": "<run>", "status": "error",
+                               "message": f"{type(exc).__name__}: {exc}"})
 
-    failures = [
-        d for d in result.details if d["status"] in ("fail", "error")
-    ]
-    failed_names = {d["test"] for d in failures}
-    total = result.testsRun
+    by_name = {}
+    order = []
+    for detail in result.details:
+        if detail["status"] not in ("fail", "error"):
+            continue
+        name = detail["test"]
+        if name in by_name:
+            by_name[name]["message"] += "\n---\n" + detail["message"]
+            continue
+        by_name[name] = dict(detail)
+        order.append(name)
+    failures = [by_name[name] for name in order]
+    known = {c["test"] for c in result.cases}
+    for detail in failures:
+        if detail["test"] not in known:
+            # setUpClass / tearDownClass 的 _ErrorHolder 不会走 startTest
+            result.cases.append({"test": detail["test"], "status": detail["status"]})
+    total = max(result.testsRun, len(result.cases))
+    passed = sum(1 for c in result.cases if c["status"] == "passed")
     payload = {
         "total": total,
-        "passed": total - len(failed_names),
+        "passed": passed,
         "failures": failures,
+        "tests": result.cases,
     }
     print(json.dumps(payload, ensure_ascii=False))
     return 0

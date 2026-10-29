@@ -5,11 +5,58 @@
   "fixture": "fixtures/L4-monthly-ledger/repo",
   "accept": "accept/L4-monthly-ledger",
   "prompt": "tasks/L4-monthly-ledger.prompt.txt",
-  "allowed": ["ledger/**"],
-  "forbidden": ["tests/**", "data/**"],
+  "allowed": [
+    "ledger/**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
-  "timebox_s": 1800
+  "timebox_s": 1800,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "按记录本地日期归月，不按 UTC",
+      "tests": [
+        "month_uses_record_local_date",
+        "entries_land_in_the_right_month"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "周末使用上一个工作日汇率，CNY 固定为 1",
+      "tests": [
+        "weekend_uses_previous_business_day_rate",
+        "cny_is_one"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "重复 id 折叠，amend 覆盖原记录",
+      "tests": [
+        "duplicate_ids_collapse_and_amend_wins"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "月度合计与币种汇总正确",
+      "tests": [
+        "march_total",
+        "april_total",
+        "by_currency"
+      ]
+    }
+  ]
 }

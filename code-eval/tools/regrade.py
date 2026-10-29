@@ -39,7 +39,13 @@ def main():
             "--task", old["task"], "--workdir", str(workdir), "--before", str(before),
             "--out", str(path), "--rep", str(old["rep"]), "--tool", old["tool"],
             "--interventions", str(old.get("interventions", 0)),
+            "--status", old.get("run_status", "ok"),
         ]
+        if old.get("rounds") is not None:
+            cmd += ["--rounds", str(old["rounds"])]
+        final_message = old.get("final_message")
+        if final_message and Path(final_message).exists():
+            cmd += ["--final-message", str(final_message)]
         if t.get("duration_s") is not None:
             cmd += ["--duration", str(t["duration_s"])]
         p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8")

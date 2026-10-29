@@ -1,0 +1,5 @@
+id,date,customer,currency,qty,price_cents
+o1,2026-01-02,alice,USD,2,1000
+o2,2026-01-03,bob,USD,1,500
+o3,2026-01-05,alice,EUR,3,200
+o4,2026-01-05,carol,CNY,1,100

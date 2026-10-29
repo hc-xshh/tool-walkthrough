@@ -1,0 +1,74 @@
+{
+  "id": "L10-stock-reserve",
+  "level": 10,
+  "title": "HTTP 服务：并发预占、幂等与重启持久化",
+  "fixture": "fixtures/L10-stock-reserve/repo",
+  "accept": "accept/L10-stock-reserve",
+  "prompt": "tasks/L10-stock-reserve.prompt.txt",
+  "allowed": [
+    "app.py",
+    "store.py"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
+  "visible": {
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
+    "timeout": 180
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "正常预占与库存查询（201 + available/reserved 正确）",
+      "tests": [
+        "test_basic_reserve_and_stock"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "库存不足返回 409 insufficient_stock，库存不变",
+      "tests": [
+        "test_insufficient_stock_is_409"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "非法 qty / 缺字段 / 非对象 JSON 返回 400，且不产生预占",
+      "tests": [
+        "test_invalid_payload_is_400"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "并发请求不超卖，available 不为负",
+      "tests": [
+        "test_concurrent_requests_do_not_oversell"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "同一 request_id 顺序或并发重试只产生一笔预占",
+      "tests": [
+        "test_duplicate_request_id_returns_same_reservation",
+        "test_concurrent_duplicate_charges_once"
+      ]
+    },
+    {
+      "id": "R6",
+      "text": "重启后预占仍然有效，重放返回同一 reservation_id",
+      "tests": [
+        "test_restart_keeps_reservations_and_idempotency"
+      ]
+    }
+  ],
+  "timebox_s": 1800
+}

@@ -10,11 +10,32 @@
   "generated": {
     "src/humanize/_version.py": "__version__ = \"0.0.0\"  # stub: setuptools_scm writes this at build time\n"
   },
-  "allowed": ["src/**"],
-  "forbidden": ["tests/**"],
+  "allowed": [
+    "src/**"
+  ],
+  "forbidden": [
+    "tests/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "pytest", "-q", "-o", "addopts=", "tests/test_number.py"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "pytest",
+      "-q",
+      "-o",
+      "addopts=",
+      "tests/test_number.py"
+    ],
     "timeout": 180
   },
-  "timebox_s": 1800
+  "timebox_s": 1800,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "intword 在进位边界按整数比较，不再因浮点误差少进一位",
+      "tests": [
+        "test_intword_rounding_rollover"
+      ]
+    }
+  ]
 }

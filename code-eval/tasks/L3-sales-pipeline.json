@@ -5,11 +5,51 @@
   "fixture": "fixtures/L3-sales-pipeline/repo",
   "accept": "accept/L3-sales-pipeline",
   "prompt": "tasks/L3-sales-pipeline.prompt.txt",
-  "allowed": ["pipeline/**"],
-  "forbidden": ["tests/**"],
+  "allowed": [
+    "pipeline/**"
+  ],
+  "forbidden": [
+    "tests/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
-  "timebox_s": 1200
+  "timebox_s": 1200,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "金额按 half-up 舍入，折扣后也要正确",
+      "tests": [
+        "half_up_rounding",
+        "discount_then_half_up"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "退款行保留并标记为退款",
+      "tests": [
+        "mark_refund",
+        "refund_kept_and_flagged"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "0 价赠品不丢、源行不被污染、标记不外泄",
+      "tests": [
+        "free_row_kept",
+        "all_rows_kept_and_total",
+        "source_rows_are_clean",
+        "no_rows_dropped_flag_leaks"
+      ]
+    }
+  ]
 }

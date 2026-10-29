@@ -38,24 +38,45 @@ code-eval/
 | `failed` | 隐藏验收有失败（可见测试可能也过） |
 | `visible_tests_failed` | 连仓库原有测试都没跑通 |
 | `scope_violation` | 改了 `forbidden` 路径（默认 `tests/**`） |
+| `timeout` | 超过时限，没做完；不计入能力结论 |
+| `blocked` | 账号 / 额度 / 窗口不可用，本轮没测成；不计入能力结论 |
 
 「可见测试」是 fixture 自带的测试；它只是地板，不是验收。真正的分在隐藏验收：
 边界值、非法入参、不变量、回归。
 
-**每条隐藏验收必须能对到任务书的一句话**。对不上的，删掉，或者补进任务书——否则判分器会
-制造「假阴性」，看起来是工具不行，其实是题出得不公平（L5 的 `deleted` 计数踩过一次）。
+**每条隐藏验收必须能对到任务书的一句话**。现在这条由 `tasks/*.json` 的
+`requirements` 机械保证：`check_tasks.py` 会检查每个验收测试都被某条需求覆盖、
+每条需求的测试名都真实存在，`--strict` 有问题直接退 1。对不上的验收会造成
+「假阴性」——看起来是工具不行，其实是题出得不公平（L5 的 `deleted` 计数踩过一次）。
 
-## 两个额外指标：几轮改对、能不能直接用
+## 四个额外指标：几轮改对、完成了几条、能不能直接用、能不能复现
 
 - **轮次**：`max_rounds` 控制。第一轮不过就把隐藏验收的失败摘要（只给测试名和最后一行断言，
   不给测试源码）喂回去让它继续修；`rounds_to_pass` 记第几轮过。没配置时默认 1 轮，等于不重试。
-- **可用**：`quality.usable` = 通过 **且** 没在 `allowed` 之外新建文件 **且** 补丁里没有
+- **完成度**：`score` = `requirements` 里满足的条数 / 总条数（0–1）。全过才算 `pass`，
+  但「6 条里过了 5 条」现在能看见，而不是只剩一个 ❌。每条需求对应哪些隐藏验收写在任务
+  JSON 里；`grade.py` 按测试名匹配，缺测试或测试没跑也算未满足。
+- **可复现**：`deliverable`。把 agent 的改动提交后 `git clone` 到干净目录，重跑可见测试与
+  隐藏验收。只活在本机未跟踪文件、绝对路径、漏写依赖的交付物，原地判分会过，干净副本会失败。
+  结果不进 verdict（原地验收仍是判分依据），进 `usable` 与记分卡的「可复现」列。
+- **可用**：`quality.usable` = 通过 **且** 没在 `allowed` 之外新建/修改文件 **且** 补丁里没有
   `TODO / FIXME / XXX / breakpoint() / pdb`。通过但留了调试文件的，记 pass 但 usable 为 false。
   未跟踪的新文件也要算进 patch——`git diff` 不含它们，`grade.py` 会用快照补上。
+- **交付说明对账**：`claims`。题面要求「说明改了哪几个文件」，驱动器把最终回复传给
+  `grade.py --final-message`；它抽出提到的文件路径，和实际 diff 对账。不参与 verdict，
+  只回答「交付说明有没有虚报」。CLI 驱动器现在会写 `<result>.final.md`；UI 驱动器暂未接。
+- **依赖声明**：`quality.undeclared_imports`。补丁里新 import 的第三方模块，如果不在
+  `requirements*.txt` / `pyproject.toml` / 本仓库目录里，记一条。静态检查，不联网。
 
 ```bash
 python tools/drive_trae.py --task L8-payments-idem ... --max-rounds 3
+python tools/grade.py --task L1-split-bill ... --no-clone        # 跳过干净副本检查
+python tools/grade.py --task L1-split-bill ... --final-message out.final.md
 ```
+
+判分器自身也要能自证：`pytest` 默认关闭插件自动加载（`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`），
+避免宿主全局插件（anyio 等）把隐藏验收弄成假失败；确实需要插件的任务在 spec 里写
+`"pytest_autoload": true`。
 
 ## 独立评审：改得怎么样（可选，不参与判分）
 
@@ -134,7 +155,7 @@ python code-eval/tools/regrade.py --run runs/<run>
 整套自测（不需要被测工具）：
 
 ```bash
-python code-eval/tools/selftest.py     # 34 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
+python code-eval/tools/selftest.py     # 41 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
 ```
 
 ## 任务清单
@@ -151,6 +172,8 @@ python code-eval/tools/selftest.py     # 34 个假 agent 用例，覆盖正确/�
 | `L7-billing-export` | L7 | 128 个文件里定位真正的导出器，作废单不能丢 | 改旧版导出器、只保留列不加标记、金额格式错 |
 | `L8-payments-idem` | L8 | 存量工程：幂等键、金额换算、超时重试三处必须一起改 | 只修一处、换键重试、int 截断金额 |
 | `L9-humanize-intword` | L9 | 真实仓库（humanize）+ 上游真实回归测试 | 浮点比较残留、只改 `%.0f` 分支 |
+| `L10-stock-reserve` | L10 | HTTP 服务：并发预占、幂等、重启持久化、入参校验 | 先读后写不超卖、重试重复扣、重启后预占丢失 |
+| `L11-report-throughput` | L11 | 性能预算：8000 行报表 3 秒内，输出逐字段不变 | 全量重算 O(n²)、只优化小数据路径 |
 
 多轮任务在 spec 里用 `prompts` 数组代替 `prompt`，驱动器在**同一个会话**里依次发送（不新建任务），
 最后统一判分；每轮单独等 idle，上一轮的「任务耗时」不能当完成信号。
@@ -177,5 +200,7 @@ python tools/drive_trae.py --task L9-humanize-intword ...
 
 - 判分假设 agent 只改文件系统；绕过测试（改 `conftest.py`、`sitecustomize.py`、
   写 `pytest.ini`）靠 `forbidden` 拦住，但只拦得住列出来的路径。
-- `timebox_s` 到了就判失败，超时本身是结论的一部分。
-- 三个任务只能说明「这三个任务」，不能外推成「编程能力」的总评。
+- `timebox_s` 到了记 `timeout`，不算 `failed`：没做完和做错了是两件事。
+- 干净副本检查只覆盖「仓库自身可复现」；宿主环境（Python 版本、系统库）不在检查范围内。
+- 这些任务只能说明这几类任务，不能外推成「编程能力」的总评；L10/L11 开始覆盖
+  服务并发与性能预算，但仍全是 Python + 标准库。

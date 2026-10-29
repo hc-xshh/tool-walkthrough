@@ -5,12 +5,57 @@
   "fixture": "fixtures/L8-payments-idem/repo",
   "accept": "accept/L8-payments-idem",
   "prompt": "tasks/L8-payments-idem.prompt.txt",
-  "allowed": ["payments/**"],
-  "forbidden": ["tests/**", "data/**"],
+  "allowed": [
+    "payments/**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
   "timebox_s": 1800,
-  "max_rounds": 3
+  "max_rounds": 3,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "同一 request_id 只扣一次，晚到的重试仍返回同一 txn_id",
+      "tests": [
+        "duplicate_request_charges_once",
+        "late_retry_after_created_at_is_still_same_request"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "超时重试复用同一个幂等键，只产生一笔扣款",
+      "tests": [
+        "timeout_retries_with_same_key_and_charges_once"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "金额按分 half-up 换算，全链路一个口径",
+      "tests": [
+        "amount_uses_half_up_cents"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "不同请求分开扣款；重放返回原结果",
+      "tests": [
+        "different_requests_charge_separately",
+        "replay_returns_the_stored_payload"
+      ]
+    }
+  ]
 }

@@ -5,11 +5,45 @@
   "fixture": "fixtures/L1-split-bill/repo",
   "accept": "accept/L1-split-bill",
   "prompt": "tasks/L1-split-bill.prompt.txt",
-  "allowed": ["money.py"],
-  "forbidden": ["tests/**"],
+  "allowed": [
+    "money.py"
+  ],
+  "forbidden": [
+    "tests/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 120
   },
-  "timebox_s": 600
+  "timebox_s": 600,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "拆分结果总和等于原金额，余数分摊后任意两人相差不超过 1 分",
+      "tests": [
+        "uneven_split",
+        "worst_case_remainder",
+        "more_people_than_cents",
+        "zero_amount_many_people",
+        "single_person_keeps_everything",
+        "deterministic"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "负金额、人数 <=0 必须拒绝，不能返回脏结果",
+      "tests": [
+        "negative_amount_rejected",
+        "non_positive_people_rejected"
+      ]
+    }
+  ]
 }

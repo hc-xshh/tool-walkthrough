@@ -5,11 +5,72 @@
   "fixture": "fixtures/L2-todo-due/repo",
   "accept": "accept/L2-todo-due",
   "prompt": "tasks/L2-todo-due.prompt.txt",
-  "allowed": ["cli.py", "store.py", "todo/**"],
-  "forbidden": ["tests/**"],
+  "allowed": [
+    "cli.py",
+    "store.py",
+    "todo/**"
+  ],
+  "forbidden": [
+    "tests/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
-  "timebox_s": 900
+  "timebox_s": 900,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "due 字段能存取，schema 键不变",
+      "tests": [
+        "due_is_stored",
+        "schema_keys_unchanged"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "add 遇到非法日期报用法错误且不写文件",
+      "tests": [
+        "invalid_due_on_add"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "list --due 只显示当天及之前，未指定时显示全部",
+      "tests": [
+        "list_filters_by_due",
+        "list_without_filter"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "list 遇到非法日期报用法错误",
+      "tests": [
+        "invalid_due_on_list"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "done 标记完成并持久化",
+      "tests": [
+        "done_marks_and_persists"
+      ]
+    },
+    {
+      "id": "R6",
+      "text": "done 未知 id / 缺 id 返回错误",
+      "tests": [
+        "done_unknown_id",
+        "done_without_id"
+      ]
+    }
+  ]
 }

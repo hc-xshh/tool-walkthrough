@@ -2,6 +2,33 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.4（2026-10-29，判分从 0/1 变成「完成度 + 可复现」，新加两条难度轴）
+
+- **判分结果升到 schema 2**：新增 `requirements[]` / `score`（每条任务书需求对应哪些隐藏验收、
+  满足几条）、`deliverable`（提交后 clone 到干净目录重跑可见测试与隐藏验收）、
+  `claims`（交付说明里提到的文件 vs 实际 diff）、`quality.undeclared_imports`。
+- **pass 的硬门槛不变**：仍然要隐藏验收全过 + 可见测试全过 + 不碰 `forbidden`；新增字段只增加
+  解释力，不放松判定。
+- **假阴性修复**：`pytest` 默认关插件自动加载（`PYTEST_DISABLE_PLUGIN_AUTOLOAD=1`）。本机
+  anyio 插件与 pytest 9.2 冲突，L9 可见测试被环境打断，自测从 31/34 回到 34/34；需要插件的
+  任务可在 spec 写 `"pytest_autoload": true`。
+- **`outside_allowed` 真正生效**：此前只写进结果、不参与任何判定；现在允许范围外的新增/修改
+  会让 `usable=false` 并出现在记分卡上。
+- **记分卡按 `level` 字段生成**：修掉 L9 不在硬编码表里显示 `?`、排序错位的问题；新增完成度、
+  可复现、逐条需求列。
+- **`check_tasks.py` 校验需求映射**：每个隐藏验收必须被某条 requirement 覆盖，每条 requirement
+  的测试名必须真实存在；`--strict` 有问题退 1。
+- **新任务 L10-stock-reserve**：stdlib HTTP 服务，考并发不超卖、幂等、重启持久化、400/409 语义；
+  参考解 7/7，未修改版本 2/7。
+- **新任务 L11-report-throughput**：8000 行报表 3 秒预算，考索引/单次遍历与输出一致性；
+  未修改版本输出正确但 7.0s 超预算，参考解 6/6。
+- 自测 41/41（新增 L10 3 条、L11 3 条、L9「用 conftest 跳过全部验收」1 条，含
+  「有幂等但没锁」「小数据对、大数据返回空」两个负例）。
+- **OCR 评审后的收口**：`accept_ok` 现在要求 pytest 退出码为 0 且 `passed == total`
+  （全 skip/xfail 不再算通过）；`--no-clone` 的交付物检查也核对可见测试；pytest 失败
+  摘要保留断言文本；unittest 子测试/`setUpClass` 错误、异步测试、测试名冲突都已覆盖；
+  `check_tasks` 的禁区检查按具体 root 匹配，需求映射改成名字边界匹配。
+
 ## v6.3（2026-10-28，evidence 与办公判分的四个真 bug）
 
 - **`wt.py evidence` 的位置参数生效**：`evidence --strict runs/<run>` 此前只认 `WALKTHROUGH_RUN`，显式路径被忽略（没设环境变量时直接报「needs a run dir」）。现在 `run_dir` 优先于环境变量。

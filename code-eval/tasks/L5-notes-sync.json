@@ -5,11 +5,73 @@
   "fixture": "fixtures/L5-notes-sync/repo",
   "accept": "accept/L5-notes-sync",
   "prompt": "tasks/L5-notes-sync.prompt.txt",
-  "allowed": ["notes/**"],
-  "forbidden": ["tests/**", "data/**"],
+  "allowed": [
+    "notes/**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
   "visible": {
-    "cmd": ["{python}", "-m", "unittest", "discover", "-s", "tests", "-v"],
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
     "timeout": 180
   },
-  "timebox_s": 2400
+  "timebox_s": 2400,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "冲突合并按 (updated_at, revision) 严格更新才覆盖",
+      "tests": [
+        "older_upsert_is_skipped",
+        "same_timestamp_higher_revision_wins",
+        "same_timestamp_and_revision_is_skipped"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "delete 删除本地记录并写墓碑",
+      "tests": [
+        "delete_removes_note_and_records_tombstone"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "墓碑阻止复活，严格更新的 upsert 才复活并清墓碑",
+      "tests": [
+        "stale_upsert_does_not_revive",
+        "newer_upsert_revives_and_clears_tombstone"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "同一份 feed 重放 applied=0",
+      "tests": [
+        "replay_is_idempotent"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "非法批次抛 ValueError 且 notes/tombstones 不变",
+      "tests": [
+        "invalid_change_leaves_inputs_untouched",
+        "missing_updated_at_is_rejected"
+      ]
+    },
+    {
+      "id": "R6",
+      "text": "CLI 打印 stats；非法 feed 退出 2 且保留文件",
+      "tests": [
+        "cli_writes_files_and_prints_stats",
+        "cli_invalid_feed_exits_2_and_keeps_files"
+      ]
+    }
+  ]
 }
