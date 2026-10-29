@@ -471,3 +471,9 @@ python harness/xlsx_audit.py runs/<run>/<book>.xlsx --sheet "<sheet>" --expect-i
   python harness/report_share.py report.md --outdir dist --dingtalk original
   ```
 
+### 15.6 账号/套餐限制与工具停顿
+
+- Cursor 选自定义 DeepSeek 模型后，提交即报 “Cursor Subscription Required”；这类限制记 `blocked`，不记 `failed`、不进能力分。预检先发一条最小消息确认。
+- Qoder 在阶段之间会压缩上下文（“正在压缩...”），历史工具细节只剩摘要；关键约束写进 STATUS/SPEC，验收以仓库状态为准，不以对话摘要为准。
+- Trae 每个变更批次会停在“全部保留”等人工确认；无人值守驱动要检测这个状态并点确认，否则会把“等人”误判成“停滞”。
+

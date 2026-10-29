@@ -8,6 +8,7 @@
 - **验收解析容错**：`Tests N passed` 优先于 `Test Files N passed`；评论 `body`/`content`、活动 `activity`/`activities` 双兼容；RBAC 用种子 admin，不假定首个注册用户是 admin。任何解析失败保留原始输出，不静默通过。
 - **新增 `harness/report_share.py`**：一份 Markdown 出三件套——单文件 HTML（base64 原图）、PDF（Chrome/Edge `--print-to-pdf`）、钉钉单文件 MD（`original` 原图 / `compact` 压缩）。`thumbs/` 引用会自动回退到全尺寸原图。
 - **METHOD §15**：把本轮踩过的坑固化为规则：验收进程可归因、解析容错、工作区边界（Qoder 把 `walkthrough` 拼成 `workthrough`，在仓外建目录并尝试 `rm -rf`）、截图前台校验、表格缩略图清晰度、钉钉 base64 与原图体积、PDF 分页。
+- **METHOD §15.6**：Cursor 订阅拦截记 `blocked` 不记 `failed`；Qoder 压缩上下文后以仓库状态为准；Trae 的“全部保留”人工确认要由驱动识别，避免误判停滞。
 - **测试**：新增 `tests/test_report_share.py`（4 条）；`harness/webapp_accept.mjs` 在 Qoder 项目上复跑 **43/43**（随机端口 56069）。
 
 ## v6.5（2026-10-29，反作弊收口 + 第一条非 Python 任务）
