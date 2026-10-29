@@ -1,6 +1,6 @@
-# 走查方法 v6.5
+# 走查方法 v6.6
 
-- 方法版本：v6.5
+- 方法版本：v6.6
 - 最后更新：2026-10-29
 - 变更记录：见 [`CHANGELOG.md`](CHANGELOG.md)
 
@@ -429,4 +429,45 @@ python harness/xlsx_audit.py runs/<run>/<book>.xlsx --sheet "<sheet>" --expect-i
 ```
 
 退出码 1 表示存在复用图、超格、缺失证据标注缺失等问题。
+
+## 15. 全栈 Web 验收与分享（2026-10-29 增补）
+
+这一节来自 TaskFlow 全栈项目的四工具走查，规则已固化到 `harness/webapp_accept.mjs` 与 `harness/report_share.py`。
+
+### 15.1 验收进程必须可归因
+
+- `npm run start:api` 的 `npm` 是父进程；杀掉它不会带走 `node` 子进程。下一轮健康检查会打到上一轮的旧服务，出现**“全绿但测的是上一版”**的假阳性。
+- 规则：每轮取随机空闲端口；起服务前先杀掉该端口的监听；用唯一的 `DB_FILE`；结束时 `taskkill /T /F`（POSIX 杀进程组）；清理 `accept-*.db`；把端口与 PID 写进结果 JSON。
+- 本轮实测：Trae 第一次跑出 43/43，实际打到了 Codex 残留的 3101 服务；修复后重跑才测到 Trae 自己的代码。
+
+### 15.2 验收解析要容错
+
+- vitest 会连续打印 `Test Files 2 passed` 与 `Tests 27 passed`；正则先匹配 `Tests N passed`，否则会把 2 当成用例数。
+- 评论字段 `body` / `content`、活动列表 `activity` / `activities` 都可能出现，两个都要接。
+- “种子 admin”与“第一个注册用户是 admin”可能冲突；RBAC 用种子账号测，不要用新注册用户假定它是 admin。
+- 任何解析失败都记 FAIL 并保留原始输出，不要静默通过。
+
+### 15.3 工作区边界
+
+- agent 会自己拼绝对路径，`walkthrough` 拼成 `workthrough`，在仓外建目录；还会尝试 `rm -rf` 仓外路径。本轮 Qoder 就在 `D:\repos\tool-workthrough\...` 留了文件，`rm -rf` 被分类器拦下。
+- 验收时把仓外新增路径也查一遍；报告写“越界”必须给出仓外文件的时间戳/大小，不能只写“可能越界”。
+- 工具界面会截断命令；Qoder 的完整命令在 `main.sqlite` 的 `chat_session_messages.payload_json` 里，必要时从会话库取原文。
+
+### 15.4 截图
+
+- 多个 Electron 窗口重叠时，`CopyFromScreen` 会抓到上层窗口。截前 `Focus` 并校验 `GetForegroundWindow() == 目标 hwnd`，失败就重试或最小化其它窗口。
+- 原生菜单/对话框不在 DOM 里；先聚焦再截，或用 `PrintWindow`。
+- 表格里 480px JPEG 缩略图放大必糊。正文用原图；表格要缩略就用 960px 无损 PNG。钉钉单文件 MD 优先塞原图。
+
+### 15.5 分享
+
+- Markdown 的相对图片路径只在本地成立。发给别人用：PDF（固定版式）、单文件 HTML（base64 内嵌）、或 ZIP（MD + 图片目录）。
+- 钉钉文档导入：官方只保证 `![](http://...)`；实测 `data:image/png;base64,...` 可以导入。单文件 MD 用原图约 2.5MB，可接受；压缩到 1400px JPEG 约 0.9MB，但文字会糊。
+- PDF 用 Chrome/Edge `--headless=new --print-to-pdf`；打印 CSS 给图片 `page-break-inside: avoid`、表格行 `page-break-inside: avoid`，否则会出现半页空白。
+- 命令：
+  ```bash
+  node harness/webapp_accept.mjs --dir eval/qoder --out eval/results/qoder.json
+  python harness/report_share.py report.md --outdir dist --all
+  python harness/report_share.py report.md --outdir dist --dingtalk original
+  ```
 

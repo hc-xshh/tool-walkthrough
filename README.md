@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.5**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
+当前方法版本：**v6.6**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -17,7 +17,7 @@
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 覆盖控件 / 结果 / 证据） |
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
-| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
+| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
 | `code-eval/` | 编码能力判分（实验）：L1–L12 十二个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
@@ -33,7 +33,7 @@
 
 Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.py` 走原生截图 / 点击，隔离靠独立用户或虚拟机。
 
-需要：Python 3.9+、git 2.20+（`new-run.sh` 找仓根、钩子和 `code-eval` 的 diff 都要用）、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
+需要：Python 3.9+、git 2.20+（`new-run.sh` 找仓根、钩子和 `code-eval` 的 diff 都要用）、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。跑 `harness/webapp_accept.mjs` 需要 Node 20+（web 项目通常已装）；单文件 HTML / PDF 用 Chrome / Chromium / Edge 生成。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
 
 完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
 
@@ -111,6 +111,22 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 
 **备份**：`runs/` 只在本机，没有远程副本。换机、误删、硬盘故障都会丢；自己定期同步到外置盘或网盘。
 
+## 分享报告（单文件）
+
+Markdown 的相对图片路径只在本机成立；直接把 `.md` 发给别人，对方会看到裂图。用 `report_share.py` 出单文件：
+
+```bash
+# 一份 MD 出 HTML + PDF + 钉钉单文件（原图）
+python3 harness/report_share.py runs/<run>/report.md --outdir runs/<run>/dist --all
+
+# 只出钉钉单文件：original 原图（约 2.5MB，清晰）/ compact 压缩（约 1MB，字会糊）
+python3 harness/report_share.py runs/<run>/report.md --outdir runs/<run>/dist --dingtalk original
+```
+
+- PDF 适合微信 / 邮件；单文件 HTML 适合浏览器查看；钉钉导入实测支持 `data:image/png;base64,...`，官方文档只保证 `![](http://...)`。
+- 表格里 480px JPEG 缩略图放大必糊；正文用原图，表格要缩略就用 960px 无损 PNG。
+- `thumbs/` 引用会自动回退到同名的全尺寸原图；图片不会上传到任何公网图床。
+
 ## 事件日志、审计与版本锚定
 
 **事件日志**：带 `--run runs/<run>`（或环境变量 `WALKTHROUGH_RUN`）的命令会往 `runs/<run>/events.jsonl` 追加一行：
@@ -172,6 +188,7 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 ## 适配点
 
 - `python3 harness/wt.py preflight`：三平台统一预检（Python、tesseract、Chrome、截图/点击工具、Linux display）。
+- `node harness/webapp_accept.mjs --dir <project> --out accept.json`：全栈 TaskFlow 参考验收（43 项，随机端口 + 全新 DB + 进程树回收）。
 - `wt.py shot|click|ocr|launch|new-run|report`：三平台统一入口；命令参数放在 `--` 之后（`launch --log x -- /path/app`）。
 - `preflight.sh`、`desktop-up.sh`、`app-launch.sh`、`shot.sh`、`click.sh`、`portal-shot.py` 是 Linux 原生脚本，保留兼容；跨平台优先用 `wt.py`。
 
