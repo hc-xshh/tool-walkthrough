@@ -5,8 +5,10 @@ Qoder exposes `desktop-pet` first, `renderer` second and an empty page third.
 scoring rule covered so a new helper page cannot silently steal the target.
 """
 import pathlib
+import subprocess
 import sys
 import unittest
+from unittest import mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT / "harness"))
@@ -35,6 +37,20 @@ class PickTargetTest(unittest.TestCase):
         ]
         picked = cdp.pick_target(tabs, match="plugins")
         self.assertIn("plugins", picked["url"])
+
+    def test_require_real_window_rejects_missing_window(self):
+        missing = subprocess.CompletedProcess([], 1, stdout="", stderr="")
+        with mock.patch.object(cdp.shutil, "which", return_value="/usr/bin/xdotool"), \
+             mock.patch.object(cdp.subprocess, "run", return_value=missing):
+            with self.assertRaises(SystemExit) as cm:
+                cdp.require_real_window("Headless Check")
+        self.assertIn("headless/virtual targets are disabled", str(cm.exception))
+
+    def test_require_real_window_accepts_visible_window(self):
+        found = subprocess.CompletedProcess([], 0, stdout="12345\n", stderr="")
+        with mock.patch.object(cdp.shutil, "which", return_value="/usr/bin/xdotool"), \
+             mock.patch.object(cdp.subprocess, "run", return_value=found):
+            cdp.require_real_window("Visible Check")
 
     def test_no_target_returns_none(self):
         self.assertIsNone(cdp.pick_target([], None))

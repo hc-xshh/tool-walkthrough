@@ -32,7 +32,10 @@ import base64
 import json
 import os
 import platform
+import re
+import shutil
 import struct
+import subprocess
 import time
 from datetime import datetime
 from pathlib import Path
@@ -51,6 +54,38 @@ VK = {
     "ArrowLeft": 37, "ArrowUp": 38, "ArrowRight": 39, "ArrowDown": 40,
     "Home": 36, "End": 35, "PageUp": 33, "PageDown": 34, "Space": 32,
 }
+
+
+def require_real_window(title):
+    """Refuse CDP targets that are not backed by a visible desktop window.
+
+    A headless Chromium has no X11/Wayland window; attaching to it would make
+    the walkthrough evaluate a virtual browser and report findings that the
+    real product may not have. On Linux we verify that a visible window with
+    the target's document title exists on the current DISPLAY.
+    """
+    if platform.system() != "Linux":
+        return
+    xdo = shutil.which("xdotool")
+    if not xdo:
+        raise SystemExit(
+            "cdp: cannot verify the real desktop window; install xdotool or "
+            "use the real display session"
+        )
+    title = str(title or "").strip()
+    if not title:
+        raise SystemExit(
+            "cdp: target has no window title; refusing an unverifiable/headless target"
+        )
+    p = subprocess.run(
+        [xdo, "search", "--onlyvisible", "--name", re.escape(title)],
+        capture_output=True, text=True, timeout=10,
+    )
+    if p.returncode != 0 or not (p.stdout or "").strip():
+        raise SystemExit(
+            f"cdp: no visible real-desktop window for {title!r}; "
+            "headless/virtual targets are disabled"
+        )
 
 
 def _log(op, target, status, started, screenshot=None, detail=""):
@@ -125,6 +160,7 @@ class CDP:
         self.ws = websocket.create_connection(page_ws(port, match, kind), timeout=30, suppress_origin=True)
         self.n = 0
         self.nested = nested
+        require_real_window(self.eval("document.title"))
 
     def cmd(self, method, params=None):
         self.n += 1

@@ -109,7 +109,7 @@ python3 harness/wt.py --run runs/2026-10-29-<tool> agent \
   --backend cdp --port 9339 --max-steps 20
 ```
 
-- `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
+- `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`。目标必须有当前真实桌面的可见窗口；headless / 虚拟窗口会被拒绝
 - `--backend desktop`：Linux 真实桌面 `:0`，截图 + xdotool；只接受真实桌面，`--display :98` 会直接报错；`--ocr` 才加 tesseract 文本
 - `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
 - Wayland 下 `:0` 的桌面截图自动走 `xdg-desktop-portal`（`portal-shot.py`），不会再拿 `x11grab` 的黑帧
@@ -181,7 +181,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 130 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 132 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 一条命令跑完整健康检查（单元测试、15 个任务规格、两套自测、Node 语法、Python 编译）：

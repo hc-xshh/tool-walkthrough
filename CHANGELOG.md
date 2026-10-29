@@ -6,7 +6,8 @@
 - 删除 `linux-x11` / `ci` profile、`desktop-up.sh`、`app-launch.sh`，以及 `wt.py launch` 的隔离 HOME / DBus / 软件渲染分支；启动应用直接进用户真实会话。
 - `--mode screening|experience` 与 findings 的 candidate/verdict 一并移除；真实桌面结果就是唯一评测结果。
 - Wayland `:0` 仍自动走 `xdg-desktop-portal`；真实 X11 会话仍用 x11grab。
-- 单元测试 130 条；`verify_all.py --strict` 通过。
+- CDP 目标必须有当前真实桌面的可见窗口；headless / 虚拟窗口会被 `cdp.py` 拒绝。
+- 单元测试 132 条；`verify_all.py --strict` 通过。
 
 ## v6.12（2026-10-29，评测口径：screening / experience）
 

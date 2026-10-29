@@ -3,7 +3,7 @@
 检查项自己的回归测试。标准库 `unittest`，不需要装任何东西：
 
 ```bash
-python -m unittest discover -s tests -v     # 130 个用例，约 5 秒
+python -m unittest discover -s tests -v     # 132 个用例，约 5 秒
 python -m pytest tests -q                   # 装了 pytest 也能跑
 ```
 
@@ -27,7 +27,7 @@ python -m pytest tests -q                   # 装了 pytest 也能跑
 | `test_launch_env.py` | `ELECTRON_RUN_AS_NODE` 从子进程环境剥离，且不修改调用方字典 |
 | `test_evidence.py` | PNG IHDR 尺寸、`evidence.json` 证据类型匹配、低分辨率判 `low-res`、空文件判 `no-shot` |
 | `test_preflight.py` | Cursor 额度、Qoder 账号/模型限制的阻断标记；正常文本不误报 |
-| `test_cdp_pick.py` | 多 target 时选主页面：`desktop-pet` 排在 `renderer` 前、空页、`--match` 强制指定 |
+| `test_cdp_pick.py` | 多 target 时选主页面：`desktop-pet` 排在 `renderer` 前、空页、`--match` 强制指定；CDP 目标必须有真实可见窗口 |
 | `test_xlsx_audit.py` | 图片跨格复用、超出单元格、行高 >409.5pt、缺失证据标注、状态冲突 |
 | `test_llm_client.py` | OpenAI-compatible 请求、图片 data URL、429 重试、401 不重试、key 脱敏、缺 key 提示 |
 | `test_llm_operator.py` | operator 动作解析、done/finding/click、越界、JSON 纠正、步数上限、重复动作、typed text 不落日志、dry-run |
