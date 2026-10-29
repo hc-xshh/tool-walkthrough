@@ -49,6 +49,13 @@ def accept_tests(accept_dir):
                         names.append(f"{node.name}.{child.name}")
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name.startswith("test"):
                 names.append(node.name)
+    for path in sorted(Path(accept_dir).rglob("*.test.js")):
+        try:
+            text = path.read_text(encoding="utf-8")
+        except OSError as exc:
+            errors.append(f"cannot read {path}: {exc}")
+            continue
+        names.extend(re.findall(r"\btest\(\s*['\"]([^'\"]+)['\"]", text))
     return names, errors
 
 

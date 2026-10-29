@@ -54,7 +54,7 @@ PATH_RE = re.compile(
 )
 
 
-def run_cmd(cmd, cwd, timeout, env=None):
+def run_cmd(cmd, cwd, timeout, env=None, full=False):
     started = time.time()
     try:
         p = subprocess.run(
@@ -71,8 +71,8 @@ def run_cmd(cmd, cwd, timeout, env=None):
             "cmd": cmd,
             "rc": p.returncode,
             "seconds": round(time.time() - started, 1),
-            "stdout": p.stdout[-4000:],
-            "stderr": p.stderr[-4000:],
+            "stdout": p.stdout if full else p.stdout[-4000:],
+            "stderr": p.stderr if full else p.stderr[-4000:],
         }
     except subprocess.TimeoutExpired:
         return {
@@ -245,12 +245,24 @@ def run_accept(workdir, spec, py, env, timeout):
         if accept_dst.exists():
             shutil.rmtree(accept_dst)
         shutil.copytree(accept_src, accept_dst)
+        if spec.get("runner") == "node":
+            cmd = spec.get("accept_cmd") or [
+                "node", "--test", "--test-reporter=tap", "_accept/test_accept.test.js"
+            ]
+            probe = run_cmd(cmd, workdir, timeout, env=env, full=True)
+            payload = tap_payload(
+                (probe["stdout"] or "") + "\n" + (probe["stderr"] or ""),
+                probe["seconds"],
+            )
+            payload["rc"] = probe["rc"]
+            return payload
         if spec.get("runner") == "pytest":
             probe = run_cmd(
                 [py, "-m", "pytest", "-v", "-o", "addopts=", "-o", "filterwarnings=", "_accept"],
                 workdir,
                 timeout,
                 env=env,
+                full=True,
             )
             payload = pytest_payload(
                 (probe["stdout"] or "") + "\n" + (probe["stderr"] or ""),
@@ -259,7 +271,7 @@ def run_accept(workdir, spec, py, env, timeout):
             payload["rc"] = probe["rc"]
             return payload
         probe = run_cmd(
-            [py, str(HERE / "accept_run.py"), "_accept"], workdir, timeout, env=env
+            [py, str(HERE / "accept_run.py"), "_accept"], workdir, timeout, env=env, full=True
         )
         try:
             payload = json.loads(probe["stdout"].strip().splitlines()[-1])
@@ -275,6 +287,43 @@ def run_accept(workdir, spec, py, env, timeout):
         return payload
     finally:
         shutil.rmtree(accept_dst, ignore_errors=True)
+
+
+def tap_payload(output, seconds):
+    """Parse `node --test --test-reporter=tap` top-level test lines."""
+    tests = []
+    messages = {}
+    last = None
+    for line in output.splitlines():
+        m = re.match(r"^(not ok|ok) \d+ - (.+?)(?:\s+#\s*(SKIP|TODO)\b.*)?$", line)
+        if m:
+            name = m.group(2).strip()
+            if m.group(3):
+                status = "skipped"
+            else:
+                status = "failed" if m.group(1) == "not ok" else "passed"
+            tests.append({"test": name, "status": status})
+            last = name
+            continue
+        if last and re.match(r"^\s+(error|stack):", line):
+            messages.setdefault(last, line.strip()[:400])
+    failures = [
+        {"test": t["test"], "status": "fail" if t["status"] == "failed" else t["status"],
+         "message": messages.get(t["test"], t["test"])}
+        for t in tests
+        if t["status"] in ("failed", "error")
+    ]
+    passed = sum(1 for t in tests if t["status"] == "passed")
+    if not tests:
+        tail = (output or "").strip().splitlines()[-1:] or [""]
+        failures = [{"test": "<node>", "status": "error", "message": tail[0][:400]}]
+    return {
+        "total": len(tests),
+        "passed": passed,
+        "failures": failures,
+        "tests": tests,
+        "seconds": seconds,
+    }
 
 
 def score_requirements(spec, accept_payload):
@@ -457,6 +506,28 @@ def claims_audit(final_text, changes):
     }
 
 
+TAMPER_NAMES = {
+    "conftest.py",
+    "pytest.ini",
+    "tox.ini",
+    "sitecustomize.py",
+    "usercustomize.py",
+}
+
+
+def harness_tamper(changes):
+    """改测试装置（而不是被测代码）单独判，别混进能力结论。
+
+    `tests/**` 由 forbidden 拦；这里补的是能改 pytest 收集/跳过行为的文件：
+    根目录 conftest.py、pytest.ini、tox.ini、sitecustomize.py、*.pth。
+    """
+    paths = changes.get("added", []) + changes.get("modified", []) + changes.get("deleted", [])
+    return [
+        p for p in paths
+        if Path(p).name in TAMPER_NAMES or p.endswith(".pth")
+    ]
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--task", required=True)
@@ -500,6 +571,7 @@ def main():
     patch = changes.pop("patch", "")
     result["changes"] = changes
     result["scope"] = scope_check(changes, spec)
+    result["scope"]["harness_tamper"] = harness_tamper(changes)
 
     py = os.environ.get("CODE_EVAL_PYTHON") or sys.executable
     env = eval_env(workdir, spec)
@@ -544,7 +616,13 @@ def main():
     visible_ok = result["visible"] is None or result["visible"]["rc"] == 0
     scope = result["scope"]
 
-    if scope["forbidden_hits"]:
+    if scope["harness_tamper"]:
+        verdict, reason = (
+            "scope_violation",
+            "改了测试装置： " + ", ".join(scope["harness_tamper"])
+            + "（conftest/pytest.ini/sitecustomize 等会影响验收收集）",
+        )
+    elif scope["forbidden_hits"]:
         verdict, reason = "scope_violation", "改了禁区文件：" + ", ".join(scope["forbidden_hits"])
     elif not visible_ok:
         verdict, reason = "visible_tests_failed", "现有测试没跑通；产品或 agent 把已有行为改坏了"

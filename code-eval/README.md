@@ -78,6 +78,26 @@ python tools/grade.py --task L1-split-bill ... --final-message out.final.md
 避免宿主全局插件（anyio 等）把隐藏验收弄成假失败；确实需要插件的任务在 spec 里写
 `"pytest_autoload": true`。
 
+### 多语言 runner
+
+`tasks/*.json` 的 `runner` 决定隐藏验收怎么跑：
+
+- 不写 / `"unittest"`：`accept_run.py` 跑标准库 `unittest`（Python 默认）
+- `"pytest"`：`python -m pytest -v`（真实仓库任务用）
+- `"node"`：`node --test --test-reporter=tap _accept/test_accept.test.js`，TAP 结果按顶层
+  测试名解析；需要多个文件时在 spec 里写 `accept_cmd`
+
+`L12-async-queue` 是第一条非 Python 任务：Node 22 + `node:test`，零第三方依赖。
+它同时验证了判分器不是只会读 Python 的 `unittest` 输出。
+
+### 反作弊：测试装置的改动单独判
+
+`tests/**` 由 `forbidden` 拦；但根目录的 `conftest.py`、`pytest.ini`、`tox.ini`、
+`sitecustomize.py`、`usercustomize.py`、`*.pth` 不在 `tests/` 下，却能改掉收集和跳过行为。
+`grade.py` 现在把它们单独记成 `scope.harness_tamper`，**优先级高于普通 failed**：
+出现即 `scope_violation`，原因写明改了哪个文件。对应自测用例：
+「用 conftest 跳过全部验收」「用 pytest.ini 取消收集」。
+
 ## 独立评审：改得怎么样（可选，不参与判分）
 
 判分回答「过没过」，评审回答「改得怎么样」。用 Alibaba 开源的 Open Code Review（命令名 `ocr`）对 agent 改过的文件再跑一遍：
@@ -155,7 +175,7 @@ python code-eval/tools/regrade.py --run runs/<run>
 整套自测（不需要被测工具）：
 
 ```bash
-python code-eval/tools/selftest.py     # 41 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
+python code-eval/tools/selftest.py     # 45 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
 ```
 
 ## 任务清单
@@ -174,6 +194,7 @@ python code-eval/tools/selftest.py     # 41 个假 agent 用例，覆盖正确/�
 | `L9-humanize-intword` | L9 | 真实仓库（humanize）+ 上游真实回归测试 | 浮点比较残留、只改 `%.0f` 分支 |
 | `L10-stock-reserve` | L10 | HTTP 服务：并发预占、幂等、重启持久化、入参校验 | 先读后写不超卖、重试重复扣、重启后预占丢失 |
 | `L11-report-throughput` | L11 | 性能预算：8000 行报表 3 秒内，输出逐字段不变 | 全量重算 O(n²)、只优化小数据路径 |
+| `L12-async-queue` | L12 | Node.js 异步队列：并发上限、结果顺序、重试预算 | 一次全发、按完成顺序 push、所有错误都重试 |
 
 多轮任务在 spec 里用 `prompts` 数组代替 `prompt`，驱动器在**同一个会话**里依次发送（不新建任务），
 最后统一判分；每轮单独等 idle，上一轮的「任务耗时」不能当完成信号。
@@ -198,9 +219,10 @@ python tools/drive_trae.py --task L9-humanize-intword ...
 
 ## 边界
 
-- 判分假设 agent 只改文件系统；绕过测试（改 `conftest.py`、`sitecustomize.py`、
-  写 `pytest.ini`）靠 `forbidden` 拦住，但只拦得住列出来的路径。
+- 判分假设 agent 只改文件系统。`conftest.py` / `pytest.ini` / `sitecustomize.py` 等
+  测试装置改动现在直接判 `scope_violation`；但仍拦不住所有花招——比如在允许改的文件里
+  动态篡改 `sys.modules`，或依赖网络/全局状态。
 - `timebox_s` 到了记 `timeout`，不算 `failed`：没做完和做错了是两件事。
-- 干净副本检查只覆盖「仓库自身可复现」；宿主环境（Python 版本、系统库）不在检查范围内。
-- 这些任务只能说明这几类任务，不能外推成「编程能力」的总评；L10/L11 开始覆盖
-  服务并发与性能预算，但仍全是 Python + 标准库。
+- 干净副本检查只覆盖「仓库自身可复现」；宿主环境（Python/Node 版本、系统库）不在检查范围内。
+- 这些任务只能说明这几类任务，不能外推成「编程能力」的总评；L10/L11 覆盖服务并发与
+  性能预算，L12 开始覆盖 Node.js 异步语义，但整体仍以 Python 为主。

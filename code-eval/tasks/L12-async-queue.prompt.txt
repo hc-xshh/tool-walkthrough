@@ -1,0 +1,21 @@
+# L12 async-queue
+
+起始仓库是一个 Node.js 任务队列 `src/queue.js`。现在的实现：
+
+- 忽略 `options.concurrency`，所有任务同时开跑
+- 结果按完成顺序 push，和输入顺序不一致
+- 没有重试
+
+任务：只改 `src/queue.js`，让 `npm test` 通过，并满足隐藏验收。
+
+约束：
+
+- 不要改 `tests/**`；不要新增依赖，只用 Node 标准库。
+- 保留 `runQueue(jobs, worker, options)` 的签名；`worker` 接收 `(job, index)`。
+- 并发上限：同时活跃的 worker 不超过 `options.concurrency`，默认 1。
+- 返回数组顺序必须和 `jobs` 一致。
+- `worker` 抛出的错误如果 `retryable === true` 或 `status === 429`，最多尝试 3 次；
+  其他错误立即失败。
+- 空输入返回空数组，不调用 worker。
+
+完成后说明：改了哪个文件、每一处为什么必须一起改。

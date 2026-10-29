@@ -1,0 +1,70 @@
+{
+  "id": "L12-async-queue",
+  "level": 12,
+  "title": "Node.js 异步队列：并发上限、顺序、重试",
+  "fixture": "fixtures/L12-async-queue/repo",
+  "accept": "accept/L12-async-queue",
+  "prompt": "tasks/L12-async-queue.prompt.txt",
+  "allowed": [
+    "src/queue.js"
+  ],
+  "forbidden": [
+    "tests/**"
+  ],
+  "visible": {
+    "cmd": [
+      "node",
+      "--test",
+      "tests/queue.test.js"
+    ],
+    "timeout": 120
+  },
+  "runner": "node",
+  "timebox_s": 900,
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "同时活跃 worker 不超过 concurrency，默认 1",
+      "tests": [
+        "respects concurrency limit",
+        "concurrency defaults to one"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "返回结果顺序与输入一致",
+      "tests": [
+        "results keep input order"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "可重试错误最多尝试 3 次",
+      "tests": [
+        "retryable errors are retried up to three attempts"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "不可重试错误立即失败，重试耗尽后失败",
+      "tests": [
+        "permanent errors are not retried",
+        "retry budget is exhausted"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "worker 收到 (job, index)",
+      "tests": [
+        "worker receives index"
+      ]
+    },
+    {
+      "id": "R6",
+      "text": "空输入返回空数组且不调用 worker",
+      "tests": [
+        "empty input returns empty array"
+      ]
+    }
+  ]
+}

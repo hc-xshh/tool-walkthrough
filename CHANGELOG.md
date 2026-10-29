@@ -2,6 +2,19 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.5（2026-10-29，反作弊收口 + 第一条非 Python 任务）
+
+- **测试装置改动单独判**：`conftest.py` / `pytest.ini` / `tox.ini` / `sitecustomize.py` /
+  `usercustomize.py` / `*.pth` 不在 `tests/**` 里，却能改掉 pytest 的收集和跳过行为。
+  `grade.py` 现在把这些记成 `scope.harness_tamper`，优先级高于普通 `failed`，出现即
+  `scope_violation`。新增两条自测：conftest 全 skip、pytest.ini 取消收集。
+- **新任务 L12-async-queue**：Node.js 异步队列，考并发上限、结果顺序、可重试错误预算、
+  永久错误不重试；`runner: "node"` 走 `node --test --test-reporter=tap`，TAP 结果按顶层
+  测试名解析。任务数 12 → 13，code-eval 不再只有 Python。
+- **修判分输出截断**：`run_cmd` 原来只保留最后 4KB，Node 的 8 条验收被截成 6 条，
+  前两条静默消失。验收命令改为保留完整输出（结果 JSON 里的 `visible` 仍截断）。
+- 自测 45/45；harness 自带测试 97 个，根 README 的旧数字 70 已更正。
+
 ## v6.4（2026-10-29，判分从 0/1 变成「完成度 + 可复现」，新加两条难度轴）
 
 - **判分结果升到 schema 2**：新增 `requirements[]` / `score`（每条任务书需求对应哪些隐藏验收、

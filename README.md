@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.4**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
+当前方法版本：**v6.5**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -18,7 +18,7 @@
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动 |
-| `code-eval/` | 编码能力判分（实验）：L1–L9 九个任务（含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE 驱动器 |
+| `code-eval/` | 编码能力判分（实验）：L1–L12 十二个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
@@ -27,7 +27,7 @@
 - **不含 `runs/` 案例库**：报告、截图、日志、产物都不在本包内。方法可以独立使用；需要样本时按本包流程自己跑一轮。
 - `runs/` 默认写在 `.gitignore` 里：证据常含账号、桌面和登录态，是否入库由你决定。
 - **不含任何被测产品的账号、登录态、截图或原始日志**。
-- 不含 AI 编程工具的**完整**能力评测方法：`code-eval/` 有 9 个任务（L1–L9，含一个真实开源仓库）和一套判分骨架，回答的是「这几个任务过不过」，不是「编程能力打几分」；办公侧只有 xlsx 一个任务，还没在真实办公 agent 上跑过。
+- 不含 AI 编程工具的**完整**能力评测方法：`code-eval/` 有 12 个任务（L1–L12，含一个真实开源仓库和一个 Node.js 并发任务）和一套判分骨架，回答的是「这几个任务过不过」，不是「编程能力打几分」；办公侧只有 xlsx 一个任务，还没在真实办公 agent 上跑过。
 
 ## 依赖
 
@@ -138,7 +138,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 70 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 97 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 用例在临时目录里造"假 run"，只改一处再断言工具的反应；改判据时先跑一遍，别让"拦住偷懒"的检查在重构里悄悄失效（`tests/README.md`）。

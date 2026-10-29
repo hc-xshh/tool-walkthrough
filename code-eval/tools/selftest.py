@@ -330,7 +330,7 @@ CASES = [
     {
         "task": "L9-humanize-intword",
         "name": "用 conftest 跳过全部验收",
-        "expect": "failed",
+        "expect": "scope_violation",
         "files": {
             "conftest.py": (
                 "text",
@@ -340,6 +340,12 @@ CASES = [
                 "        item.add_marker(pytest.mark.skip(reason='x'))\n",
             )
         },
+    },
+    {
+        "task": "L9-humanize-intword",
+        "name": "用 pytest.ini 取消收集",
+        "expect": "scope_violation",
+        "files": {"pytest.ini": ("text", "[pytest]\naddopts = -k __nothing__\n")},
     },
     {
         "task": "L10-stock-reserve",
@@ -382,6 +388,24 @@ CASES = [
         "files": {
             "reports/aggregate.py": ("file", "selftest/variants/L11-fast-wrong-report.py"),
         },
+    },
+    {
+        "task": "L12-async-queue",
+        "name": "正确实现（并发池+顺序+重试）",
+        "expect": "pass",
+        "files": {"src/queue.js": ("solution", "L12-async-queue/queue.js")},
+    },
+    {
+        "task": "L12-async-queue",
+        "name": "并发和顺序对了，但完全不重试",
+        "expect": "visible_tests_failed",
+        "files": {"src/queue.js": ("file", "selftest/variants/L12-no-retry-queue.js")},
+    },
+    {
+        "task": "L12-async-queue",
+        "name": "把所有错误都当可重试",
+        "expect": "failed",
+        "files": {"src/queue.js": ("file", "selftest/variants/L12-retry-all-queue.js")},
     },
 ]
 
