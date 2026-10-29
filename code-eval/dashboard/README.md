@@ -1,7 +1,7 @@
-# Eval Console（只读评测控制台）
+# Eval Console（评测控制台）
 
 给评测人员看的本地页面：任务目录、运行列表、逐条结果、工具 × 任务对比。
-**只读**：不启动评测、不写 `runs/`、不连外部服务。
+默认只读；用 `serve_dashboard.py` 打开时，可以在 `#/launch` 本地启动评测。
 
 ## 生成
 
@@ -19,7 +19,7 @@ python3 code-eval/tools/build_dashboard.py --runs runs --out runs/dashboard
 
 `data.js` 是生成物，跟着 `runs/` 一起被 gitignore；不要手改。
 
-## 打开
+## 打开（只读）
 
 ```bash
 cd runs/dashboard
@@ -28,7 +28,26 @@ python3 -m http.server 8787
 ```
 
 直接双击 `index.html` 也可以，`data.js` 是本地脚本，不依赖 fetch。
-建议用本地 HTTP，方便后续把截图/报告链接接进来；不要把 `runs/` 直接暴露到公网。
+静态模式只能看结果；不要把 `runs/` 直接暴露到公网。
+
+## 打开（可下命令）
+
+```bash
+cd ~/workspace/tool-walkthrough
+python3 code-eval/tools/serve_dashboard.py
+# http://127.0.0.1:8787/#/launch
+```
+
+这是本地单用户控制模式：选任务、驱动器和重复次数，启动 `run_tool.py`，页面里看日志、停止运行；
+完成后自动重建 `data.js`，刷新页面就能看到新结果。
+
+边界：
+
+- 只绑定 `127.0.0.1`，没有登录 / 多用户隔离 / 队列。
+- 只允许白名单 driver（Codex / TRAE / Cursor / Qoder）和 `tasks/*.json` 里存在的任务 id。
+- 同一时间只跑一个 run；停止会向整个进程组发 SIGTERM。
+- 不会执行任意 shell 命令；run 目录和日志都在 `runs/<run-id>/`。
+
 
 ## 页面
 
@@ -41,6 +60,7 @@ python3 -m http.server 8787
 | `#/runs/<id>` | 一次运行的全部结果 |
 | `#/results/<run>/<task>/<rep>` | verdict、需求、隐藏验收、scope/quality/claims、diff |
 | `#/compare` | 工具 × 任务通过矩阵 |
+| `#/launch` | 控制模式下新建运行、看日志、停止 |
 
 ## 设计约束
 

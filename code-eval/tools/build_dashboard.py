@@ -219,7 +219,8 @@ def main():
     print(f"  tasks={len(tasks)} runs={len(runs)} results={payload['result_count']}")
     if durations:
         print(f"  duration median={statistics.median(durations):.1f}s")
-    print(f"  serve: cd {out} && python3 -m http.server 8787")
+    print(f"  static:  cd {out} && python3 -m http.server 8787")
+    print("  control: python3 code-eval/tools/serve_dashboard.py")
 
 
 if __name__ == "__main__":

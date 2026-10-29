@@ -20,7 +20,7 @@ code-eval/
   tasks/          任务书（给 agent 的 prompt）+ 任务规格（allowed / forbidden / 验收）
   fixtures/       每个任务的起始仓库（agent 在副本上工作）
   accept/         隐藏验收，判分时才拷进工作目录，agent 看不到
-  tools/          prepare / snap / grade / accept_run / drive_trae / drive_qoder / drive_cursor / drive_codex / preflight / run_tool / run_suite / check_tasks / scorecard / timing / regrade / review / selftest / build_dashboard
+  tools/          prepare / snap / grade / accept_run / drive_trae / drive_qoder / drive_cursor / drive_codex / preflight / run_tool / run_suite / check_tasks / scorecard / timing / regrade / review / selftest / build_dashboard / serve_dashboard
   dashboard/      只读评测控制台的 HTML/CSS/JS 模板（生成物在 runs/dashboard/）
   selftest/       假 agent 的参考解与负例，用来验证判分口径
   reports/        跑完的报告（可提交，不含证据原文件）
@@ -180,14 +180,19 @@ python code-eval/tools/run_tool.py --driver drive_codex.py \
 ## 可视化控制台（给评测人员）
 
 ```bash
+# 只读：生成后静态打开
 python code-eval/tools/build_dashboard.py
 cd runs/dashboard && python3 -m http.server 8787
-# 打开 http://127.0.0.1:8787/
+
+# 要从前端下运行命令：用本地控制服务
+python code-eval/tools/serve_dashboard.py
+# 打开 http://127.0.0.1:8787/#/launch
 ```
 
 只读：任务目录、运行列表、逐条结果（需求 / 隐藏验收 / scope / quality / claims / diff）、
 工具 × 任务对比。生成物在 `runs/dashboard/`，模板和说明见 [`dashboard/README.md`](dashboard/README.md)。
-它不启动评测、不写 `runs/`；`runs/` 里的截图和日志也不会被整份塞进页面。
+静态模式不启动评测、不写 `runs/`；控制模式通过白名单 driver 启动 `run_tool.py`，同一时间只允许一个 run。
+两种模式都不会把 `runs/` 里的截图和日志整份塞进页面。
 
 ## 跑一次
 

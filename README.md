@@ -19,7 +19,7 @@
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
 | `verify_all.py` | 一条命令跑完整健康检查：单元测试、任务规格、两个自测、Node 语法、Python 编译 |
-| `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 = 13 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 只读评测控制台 |
+| `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 = 13 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 

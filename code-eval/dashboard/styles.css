@@ -298,3 +298,44 @@ details .diff { border: 0; border-radius: 0 0 6px 6px; }
   .check-grid { grid-template-columns: 1fr; }
   .req-row { grid-template-columns: 26px minmax(0,1fr) 70px; }
 }
+
+/* launch form */
+.pick-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; max-height: 560px; overflow: auto; padding: 2px; }
+.pick {
+  display: flex; gap: 8px; align-items: flex-start; cursor: pointer;
+  background: var(--panel-2); border: 1px solid var(--line-soft);
+  border-radius: 6px; padding: 8px 9px; min-width: 0;
+}
+.pick:hover { border-color: #3a4b5e; }
+.pick:has(input:checked) { border-color: rgba(121,192,255,.42); background: var(--blue-bg); }
+.pick input { accent-color: var(--blue); margin-top: 2px; }
+.pick span { font-size: 11px; line-height: 1.4; min-width: 0; overflow-wrap: anywhere; }
+.pick b { font: 500 10px var(--mono); color: var(--blue); }
+.pick em { display: block; color: var(--dim); font: 9px var(--mono); font-style: normal; margin-top: 2px; }
+.field { display: grid; gap: 5px; margin: 9px 0; }
+.field > span { color: var(--dim); font: 9px var(--mono); text-transform: uppercase; letter-spacing: .08em; }
+.field input, .field select {
+  width: 100%; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 6px; padding: 7px 8px; color: var(--ink); font: 10px var(--mono); outline: 0;
+}
+.field.check { display: flex; align-items: center; gap: 7px; }
+.field.check input { width: auto; accent-color: var(--blue); }
+.field.check span { text-transform: none; letter-spacing: 0; font-size: 10px; color: var(--muted); }
+.command {
+  background: #0a0f14; border: 1px solid var(--line-soft); border-radius: 6px;
+  padding: 10px; color: var(--muted); font: 10px/1.6 var(--mono);
+  white-space: pre-wrap; overflow-wrap: anywhere; margin: 10px 0;
+}
+.btn {
+  border: 1px solid var(--line); background: var(--panel-2); color: var(--ink);
+  border-radius: 6px; padding: 8px 12px; cursor: pointer; font: 11px var(--mono);
+}
+.btn:hover { border-color: #3a4b5e; }
+.btn.primary { border-color: rgba(126,231,135,.35); background: var(--green-bg); color: var(--green); }
+.btn.danger { border-color: rgba(255,123,114,.35); background: var(--red-bg); color: var(--red); }
+.btn:disabled { opacity: .4; cursor: not-allowed; }
+.log { max-height: 260px; overflow: auto; }
+@media (max-width: 760px) {
+  .nav { grid-template-columns: repeat(5, 1fr); }
+  .pick-list { grid-template-columns: 1fr; }
+}

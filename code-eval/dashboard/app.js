@@ -13,7 +13,12 @@
   }
   allResults.sort((a, b) => String(b.started || "").localeCompare(String(a.started || "")));
 
-  const state = { q: "", cat: "all", comp: "all" };
+  const state = {
+    q: "", cat: "all", comp: "all",
+    api: null, options: null, apiRuns: [],
+    selected: new Set(), driver: "drive_codex.py", reps: 1, force: false,
+    runId: "", launchRun: null, pollTimer: null,
+  };
   const $ = (sel) => document.querySelector(sel);
   const view = $("#view");
   const search = $("#search");
@@ -116,6 +121,86 @@
     const target = String(path).startsWith("#") ? path : `#${path}`;
     if (location.hash === target) render();
     else location.hash = target;
+  }
+
+  async function api(path, options = {}) {
+    const res = await fetch(path, { cache: "no-store", ...options });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
+    return data;
+  }
+
+  let toastTimer = null;
+  function toast(text) {
+    const el = document.querySelector("#toast");
+    if (!el) return;
+    el.textContent = text;
+    el.classList.add("on");
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => el.classList.remove("on"), 2400);
+  }
+
+  function selectedTaskIds() {
+    return [...state.selected].filter((id) => tasksById.has(id));
+  }
+  function driverLabel(id) {
+    const d = (state.options?.drivers || []).find((x) => x.id === id);
+    return d ? d.label : id.replace(/^drive_/, "").replace(/\.py$/, "");
+  }
+  function commandPreview() {
+    const ids = selectedTaskIds();
+    const run = state.runId.trim() || "<自动生成>";
+    return `python3 code-eval/tools/run_tool.py --driver ${state.driver} --tasks ${ids.join(",") || "<选择任务>"} --reps ${state.reps} --run runs/${run}${state.force ? " --force" : ""}`;
+  }
+  function updateModePill() {
+    const el = document.querySelector("#mode-pill");
+    if (!el) return;
+    if (state.api === true) { el.textContent = "CONTROL"; el.style.color = "var(--amber)"; el.style.borderColor = "rgba(227,179,65,.35)"; el.style.background = "rgba(227,179,65,.07)"; }
+    else if (state.api === false) { el.textContent = "LOCAL · 只读"; }
+  }
+  function updatePickedSummary() {
+    const count = selectedTaskIds().length;
+    const c = document.querySelector("#selected-count");
+    if (c) c.textContent = `${count} / ${DATA.tasks.length}`;
+    const cmd = document.querySelector("#cmd-preview");
+    if (cmd) cmd.textContent = commandPreview();
+    const start = document.querySelector("[data-action=start]");
+    if (start) start.disabled = !state.api || !count || !!activeRun();
+  }
+  function activeRun() {
+    if (state.launchRun && state.launchRun.status === "running") return state.launchRun;
+    return (state.apiRuns || []).find((r) => r.status === "running") || null;
+  }
+
+  async function probeApi() {
+    try {
+      const health = await api("/api/health");
+      if (!health?.ok) throw new Error("not control mode");
+      state.api = true;
+      state.options = await api("/api/options");
+      const runs = await api("/api/runs");
+      state.apiRuns = runs.runs || [];
+      if (!state.selected.size) {
+        // Do not pick tasks silently; leave it empty and make the user choose.
+      }
+      updateModePill();
+      if (parseHash().page === "launch") render();
+    } catch {
+      state.api = false;
+      updateModePill();
+      if (parseHash().page === "launch") render();
+    }
+  }
+
+  async function refreshApiRuns() {
+    if (!state.api) return;
+    try {
+      const { runs } = await api("/api/runs");
+      state.apiRuns = runs || [];
+      if (parseHash().page === "launch") render();
+    } catch {
+      // Keep the last list; the launch panel will show its own errors.
+    }
   }
 
   function crumbs(items) {
@@ -477,6 +562,150 @@
       <p class="dim mono" style="font-size:10px">单元格 = 通过次数 / 尝试次数；同一工具多次 run 会合并。不是统计显著性，只是当前样本。</p>`;
   }
 
+
+  // ---------- launch (control mode only) ----------
+  function syncPicks() {
+    document.querySelectorAll("[data-task]").forEach((el) => {
+      el.checked = state.selected.has(el.dataset.task);
+    });
+    updatePickedSummary();
+  }
+
+  function renderLaunch() {
+    const apiState = state.api;
+    const active = activeRun() || (state.apiRuns || []).find((r) => r.status === "running");
+    const recent = (state.apiRuns || []).slice(0, 8).map((r) => {
+      const status = r.status === "finished" ? "pass" : r.status === "running" || r.status === "stopping" ? "warn" : "fail";
+      return `<tr>
+        <td class="id">${esc(r.id)}</td>
+        <td>${esc(r.driver_label || driverLabel(r.driver || ""))}</td>
+        <td class="num">${esc((r.tasks || []).length)} × ${esc(r.reps || 1)}</td>
+        <td><span class="status ${status}">${esc(r.status)}</span></td>
+        <td class="num">${fmtSec(r.duration_s)}</td>
+        <td class="num"><a href="${href(`/runs/${enc(r.id)}`)}" class="dim">查看</a></td>
+      </tr>`;
+    }).join("");
+
+    if (apiState === null) {
+      return `${head("LAUNCH", "新建运行", "正在检测本地控制服务…")}<div class="panel dim">连接 /api/health…</div>`;
+    }
+    if (apiState === false) {
+      return `${head("LAUNCH", "新建运行", "当前是静态只读模式。要在这里下达运行命令，需要用控制服务打开。")}
+        <div class="panel">
+          <div class="panel-head"><h2>启动控制服务</h2><span class="pill">LOCAL ONLY</span></div>
+          <pre class="prompt">cd ~/workspace/tool-walkthrough
+python3 code-eval/tools/serve_dashboard.py
+# 然后打开 http://127.0.0.1:8787/#/launch</pre>
+          <p class="dim" style="margin-bottom:0">静态模式（<code>python -m http.server</code>）只能看结果，不能启动任务。</p>
+        </div>`;
+    }
+
+    const selected = selectedTaskIds();
+    const options = state.options?.drivers || [];
+    const catOptions = ["all", ...Array.from(new Set(DATA.tasks.map((t) => t.category))).sort()];
+    const compOptions = ["all", "basic", "intermediate", "advanced"];
+    const picks = DATA.tasks.map((t) => `<label class="pick">
+      <input type="checkbox" data-task="${esc(t.id)}" ${state.selected.has(t.id) ? "checked" : ""}>
+      <span><b>L${esc(t.level)}</b> ${esc(t.id)} <em>${esc(t.category)} · ${esc(t.complexity)}</em></span>
+    </label>`).join("");
+    const driverOptions = options.map((d) => `<option value="${esc(d.id)}" ${state.driver === d.id ? "selected" : ""}>${esc(d.label)} · ${esc(d.id)}</option>`).join("");
+    const log = state.launchRun?.log ? esc(state.launchRun.log) : "（尚无日志）";
+    const runPanel = state.launchRun ? `<div class="panel" id="active-run">
+      <div class="panel-head"><h2>当前运行</h2><span class="status ${state.launchRun.status === "running" ? "warn" : state.launchRun.status === "finished" ? "pass" : "fail"}">${esc(state.launchRun.status)}</span></div>
+      <div class="meta" style="margin-bottom:12px">
+        <div><div class="k">Run</div><div class="v">${esc(state.launchRun.id)}</div></div>
+        <div><div class="k">Driver</div><div class="v">${esc(state.launchRun.driver_label || state.launchRun.driver)}</div></div>
+        <div><div class="k">Tasks</div><div class="v">${esc((state.launchRun.tasks || []).length)} × ${esc(state.launchRun.reps || 1)}</div></div>
+        <div><div class="k">Duration</div><div class="v">${fmtSec(state.launchRun.duration_s)}</div></div>
+      </div>
+      <pre class="prompt log">${log}</pre>
+      ${state.launchRun.status === "running" || state.launchRun.status === "stopping" ? `<button class="btn danger" data-action="stop">停止</button>` : ""}
+      ${state.launchRun.status === "finished" && state.launchRun.data_built ? `<span class="dim mono" style="font-size:10px;margin-left:10px">数据已重建，刷新后出现新结果</span>` : ""}
+    </div>` : "";
+
+    return `${head("LAUNCH", "新建运行", "选择任务与驱动器，在本地启动一次评测。只允许白名单 driver 和任务 id；同一时间只跑一个。", `<span class="pill">CONTROL</span>`)}
+      ${runPanel}
+      <div class="grid-2">
+        <div class="panel">
+          <div class="panel-head"><h2>任务</h2><span class="hint" id="selected-count">${selected.length} / ${DATA.tasks.length}</span></div>
+          <div class="toolbar"><div class="left">
+            <select data-filter="cat">${catOptions.map((c) => `<option value="${esc(c)}">${esc(c === "all" ? "全部分类" : c)}</option>`).join("")}</select>
+            <select data-filter="comp">${compOptions.map((c) => `<option value="${esc(c)}">${esc(c === "all" ? "全部难度" : c)}</option>`).join("")}</select>
+            <button class="chip" data-action="apply-filter">按筛选选中</button>
+            <button class="chip" data-action="hardest">只选最复杂 1 个</button>
+            <button class="chip" data-action="clear">清空</button>
+          </div></div>
+          <div class="pick-list">${picks}</div>
+        </div>
+        <div>
+          <div class="panel">
+            <div class="panel-head"><h2>启动参数</h2><span class="hint">白名单</span></div>
+            <label class="field"><span>驱动器</span><select data-input="driver">${driverOptions}</select></label>
+            <label class="field"><span>重复次数</span><input data-input="reps" type="number" min="1" max="10" value="${esc(state.reps)}"></label>
+            <label class="field"><span>Run ID</span><input data-input="run-id" type="text" placeholder="留空自动生成" value="${esc(state.runId)}"></label>
+            <label class="field check"><input data-input="force" type="checkbox" ${state.force ? "checked" : ""}><span>覆盖同 run 内已有结果</span></label>
+            <pre class="command" id="cmd-preview">${esc(commandPreview())}</pre>
+            <button class="btn primary" data-action="start" ${!selected.length || active ? "disabled" : ""}>开始运行</button>
+            <div class="hint" style="margin-top:8px">${active ? `已有运行进行中：${esc(active.id)}` : "启动后在此看日志；完成后会自动重建数据。"}</div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h2>控制运行</h2><button class="chip" data-action="refresh">刷新</button></div>
+            <div class="tbl-wrap"><table><thead><tr><th>run</th><th>driver</th><th class="num">任务</th><th>状态</th><th class="num">耗时</th><th></th></tr></thead>
+            <tbody>${recent || `<tr><td colspan="6" class="dim">还没有控制台启动的运行。</td></tr>`}</tbody></table></div>
+          </div>
+        </div>
+      </div>`;
+  }
+
+  async function startSelectedRun() {
+    const tasks = selectedTaskIds();
+    if (!tasks.length) return toast("先选至少一个任务");
+    try {
+      const body = {
+        driver: state.driver, tasks, reps: Number(state.reps) || 1,
+        force: state.force, run_id: state.runId.trim() || undefined,
+      };
+      const { run } = await api("/api/runs", {
+        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body),
+      });
+      state.launchRun = run;
+      state.apiRuns = [run, ...(state.apiRuns || [])];
+      render();
+      toast(`已启动 ${run.id}`);
+      pollRun(run.id);
+    } catch (err) {
+      toast(err.message);
+    }
+  }
+
+  async function stopLaunchRun() {
+    if (!state.launchRun) return;
+    try {
+      const { run } = await api(`/api/runs/${enc(state.launchRun.id)}/stop`, { method: "POST", headers: { "Content-Type": "application/json" }, body: "{}" });
+      state.launchRun = { ...state.launchRun, ...run };
+      render();
+      toast("已发送停止信号");
+    } catch (err) { toast(err.message); }
+  }
+
+  async function pollRun(id) {
+    clearTimeout(state.pollTimer);
+    try {
+      const { run } = await api(`/api/runs/${enc(id)}`);
+      state.launchRun = run;
+      if (parseHash().page === "launch") render();
+      if (run.status === "running" || run.status === "stopping") {
+        state.pollTimer = setTimeout(() => pollRun(id), 1200);
+      } else {
+        await refreshApiRuns();
+        if (run.status === "finished" && run.data_built) setTimeout(() => location.reload(), 1000);
+        else toast(`运行 ${run.status}${run.build_error ? " · 数据重建失败" : ""}`);
+      }
+    } catch (err) {
+      state.pollTimer = setTimeout(() => pollRun(id), 2000);
+    }
+  }
+
   // ---------- router ----------
   function render() {
     const { page, parts } = parseHash();
@@ -505,6 +734,9 @@
         { label: parts[0] || "", href: href(`/runs/${enc(parts[0] || "")}`) },
         { label: `${parts[1] || ""} · r${parts[2] || ""}` },
       ]);
+    } else if (page === "launch") {
+      html = renderLaunch();
+      crumbs([{ label: "新建运行" }]);
     } else if (page === "compare") {
       html = renderCompare();
       crumbs([{ label: "对比" }]);
@@ -513,7 +745,7 @@
       crumbs([{ label: "总览" }]);
     }
     view.innerHTML = html;
-    const title = page === "overview" ? "总览" : page === "tasks" ? "任务" : page === "runs" ? "运行" : page === "compare" ? "对比" : "结果";
+    const title = page === "overview" ? "总览" : page === "tasks" ? "任务" : page === "runs" ? "运行" : page === "launch" ? "新建运行" : page === "compare" ? "对比" : "结果";
     document.title = `${title} · Eval Console`;
     window.scrollTo(0, 0);
   }
@@ -523,9 +755,43 @@
     if (goEl) { event.preventDefault(); go(goEl.dataset.go); return; }
     const cat = event.target.closest("[data-cat]");
     if (cat) { state.cat = cat.dataset.cat; render(); return; }
+    const action = event.target.closest("[data-action]")?.dataset.action;
+    if (action === "clear") { state.selected.clear(); syncPicks(); return; }
+    if (action === "hardest") {
+      const hardest = DATA.tasks.filter((t) => t.complexity === "advanced")
+        .sort((a, b) => (b.level || 0) - (a.level || 0))[0];
+      state.selected = new Set(hardest ? [hardest.id] : []);
+      syncPicks(); return;
+    }
+    if (action === "apply-filter") {
+      const catSel = view.querySelector('[data-filter="cat"]');
+      const compSel = view.querySelector('[data-filter="comp"]');
+      const cat = catSel ? catSel.value : "all";
+      const comp = compSel ? compSel.value : "all";
+      state.selected = new Set(DATA.tasks.filter((t) =>
+        (cat === "all" || t.category === cat) && (comp === "all" || t.complexity === comp)
+      ).map((t) => t.id));
+      syncPicks(); return;
+    }
+    if (action === "start") { startSelectedRun(); return; }
+    if (action === "stop") { stopLaunchRun(); return; }
+    if (action === "refresh") { refreshApiRuns(); return; }
   });
   view.addEventListener("change", (event) => {
-    if (event.target.id === "complexity") { state.comp = event.target.value; render(); }
+    const t = event.target;
+    if (t.id === "complexity") { state.comp = t.value; render(); return; }
+    if (t.matches("[data-task]")) {
+      if (t.checked) state.selected.add(t.dataset.task); else state.selected.delete(t.dataset.task);
+      updatePickedSummary(); return;
+    }
+    if (t.matches('[data-input="driver"]')) { state.driver = t.value; updatePickedSummary(); return; }
+    if (t.matches('[data-input="reps"]')) { state.reps = Math.max(1, Math.min(10, Number(t.value) || 1)); updatePickedSummary(); return; }
+    if (t.matches('[data-input="force"]')) { state.force = t.checked; updatePickedSummary(); return; }
+  });
+  view.addEventListener("input", (event) => {
+    const t = event.target;
+    if (t.matches('[data-input="run-id"]')) { state.runId = t.value; updatePickedSummary(); }
+    if (t.matches('[data-input="reps"]')) { state.reps = Math.max(1, Math.min(10, Number(t.value) || 1)); updatePickedSummary(); }
   });
   search.addEventListener("input", (event) => {
     state.q = event.target.value.trim();
@@ -537,4 +803,5 @@
   $("#built-at").textContent = DATA.generated_at ? `generated ${DATA.generated_at.slice(0, 16).replace("T", " ")}` : "no data";
   $("#foot-at").textContent = DATA.generated_at ? DATA.generated_at.slice(0, 16).replace("T", " ") : "—";
   render();
+  probeApi();
 })();
