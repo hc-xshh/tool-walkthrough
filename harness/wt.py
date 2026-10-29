@@ -78,10 +78,6 @@ def require_real_display(disp):
 
 def cmd_preflight(a):
     prof = profile(a)
-    if OS == "Linux":
-        require_real_display(
-            a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
-        )
     lock = load_lock()
     rc = 0
     print(f"{'profile':<24} {'PASS':<5} {prof.get('_name')} (os={OS})")
@@ -144,6 +140,16 @@ def cmd_preflight(a):
             p = which_any([b])
             say(b, bool(p), p or "missing (Linux desktop walkthroughs)", warn_only=True)
         disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+        if str(disp).split(".")[0] != ":0":
+            say("real session", False, f"virtual displays are disabled ({disp}); use :0")
+            rc = 1
+        else:
+            try:
+                info = verify_real_session(disp)
+                say("real session", True, f"{info['type']}, seat={info['seat']}")
+            except SystemExit as exc:
+                say("real session", False, str(exc))
+                rc = 1
         xdpy = which_any(["xdpyinfo"])
         check_env = dict(os.environ)
         auth_hint = ""
