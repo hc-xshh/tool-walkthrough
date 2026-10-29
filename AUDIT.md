@@ -30,7 +30,7 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 | `webapp_accept.mjs` 失败退出码 | 1 | 空项目跑出 4/20，进程退出 1 |
 | Node 语法 | 通过 | `node --check harness/webapp_accept.mjs` + `node --check code-eval/dashboard/app.js` |
 | 可视化控制台 | 构建/控制模式通过 | `build_dashboard.py` + `serve_dashboard.py`：15 tasks / 2 runs / 13 results；API 健康、白名单校验、假 driver 启动生命周期；浏览器巡检总览、任务、结果、对比、新建运行 |
-| GitHub Actions | success | run 40863859882，2m0s |
+| GitHub Actions | success | run 40866954161，1m16s |
 | Codex L10–L12 | 9/9 pass | 见 `code-eval/reports/2026-10-29-codex-l10-l12.md` |
 | LLM operator 单测 | 18 passed | `test_llm_client` 6 + `test_llm_operator` 12 |
 | Wayland 桌面截图 | PASS，1920x1080 非黑帧 | `wt.py --profile linux-desktop shot` 走 xdg-desktop-portal；平均 RGB 约 59/63/70，`x11grab` 同机全黑 |
