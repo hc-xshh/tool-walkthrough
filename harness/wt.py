@@ -64,8 +64,22 @@ def launch_env(base=None):
 
 
 
+def require_real_display(disp):
+    """Reject virtual displays; this harness only evaluates the real desktop."""
+    value = str(disp or ":0").strip()
+    if value.split(".")[0] != ":0":
+        raise SystemExit(
+            f"virtual displays are disabled ({value}); use the real desktop DISPLAY=:0"
+        )
+    return value
+
+
 def cmd_preflight(a):
     prof = profile(a)
+    if OS == "Linux":
+        require_real_display(
+            a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+        )
     lock = load_lock()
     rc = 0
     print(f"{'profile':<24} {'PASS':<5} {prof.get('_name')} (os={OS})")
@@ -124,17 +138,17 @@ def cmd_preflight(a):
         )
 
     if OS == "Linux":
-        for b in ("ffmpeg", "xdotool", "Xvfb", "openbox", "dbus-daemon", "xdpyinfo"):
+        for b in ("ffmpeg", "xdotool", "xdpyinfo"):
             p = which_any([b])
             say(b, bool(p), p or "missing (Linux desktop walkthroughs)", warn_only=True)
-        disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
+        disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
         xdpy = which_any(["xdpyinfo"])
         check_env = dict(os.environ)
         auth_hint = ""
         if OS == "Linux" and disp == ":0" and not check_env.get("XAUTHORITY"):
             # An agent shell often has no DISPLAY/XAUTHORITY even when the GNOME
             # session is running. Try the current user's Xwayland auth file for
-            # the check; tell the user the exact export instead of "start Xvfb".
+            # the check; tell the user the exact export instead of guessing.
             auths = sorted(Path(f"/run/user/{os.getuid()}").glob(".mutter-Xwaylandauth.*"))
             if auths:
                 check_env["XAUTHORITY"] = str(auths[0])
@@ -147,7 +161,7 @@ def cmd_preflight(a):
         elif disp == ":0":
             detail = auth_hint or "run inside the desktop session, or set DISPLAY/XAUTHORITY"
         else:
-            detail = "start desktop-up.sh"
+            detail = "start a real desktop session, or export DISPLAY/XAUTHORITY"
         rc |= say(f"display {disp}", ok, detail)
     elif OS == "Darwin":
         say("screencapture", bool(which_any(["screencapture"])), "system tool", warn_only=True)
@@ -239,7 +253,9 @@ def cmd_shot(a):
     prof = profile(a)
     out = Path(a.out).expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
-    disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
+    disp = require_real_display(
+        a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+    )
     geom = a.geometry or prof.get("geometry") or ""
 
     meta = wtshot.capture_screen(out, disp, geom)
@@ -274,18 +290,20 @@ class _ShotArgs:
 def cmd_click(a):
     # 原生点击会移动用户的物理鼠标（Windows: SetCursorPos + mouse_event；
     # macOS: cliclick/osascript；Linux: xdotool）。想完全不碰用户的输入设备，
-    # 就在这个开关下改用 cdp.py，或者把整轮走查放进隔离桌面。
+    # 就在这个开关下改用 cdp.py；本项目不提供虚拟桌面路径。
     if getattr(a, "no_native_input", False) or os.environ.get("WALKTHROUGH_NO_NATIVE_INPUT") == "1":
         print(
             "native click disabled: it would move the physical pointer. "
             "Use `python3 harness/cdp.py clickel \"<label>\"` (DOM/mouse events inside the app) "
-            "or run the walkthrough in an isolated desktop.",
+            "or use a separate user/VM for native dialogs.",
             file=sys.stderr,
         )
         raise SystemExit(2)
 
     prof = profile(a)
-    disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
+    disp = require_real_display(
+        a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+    )
     x, y = float(a.x), float(a.y)
     note = ""
     if getattr(a, "shot", None):
@@ -551,28 +569,14 @@ def cmd_launch(a):
         # --app only means "open -a <app>", which exists on macOS alone
         raise SystemExit(f"launch needs a command on {OS} (--app is macOS-only)")
     if OS == "Linux":
-        base = Path(os.environ.get("WALKTHROUGH_BASE", "/tmp/walkthrough"))
-        home = Path(os.environ.get("WALKTHROUGH_HOME", base / "home"))
-        home.mkdir(parents=True, exist_ok=True)
-        (base / "runtime").mkdir(parents=True, exist_ok=True)
+        # Launch into the user's real session. Do not replace HOME, DBus or
+        # the runtime dir: login state, keyring, notifications and native
+        # dialogs are part of what an experience walkthrough is judging.
         env.update(
-            DISPLAY=a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98"),
-            HOME=str(home),
-            XDG_RUNTIME_DIR=str(base / "runtime"),
-            DBUS_SESSION_BUS_ADDRESS=os.environ.get(
-                "WALKTHROUGH_DBUS", f"unix:path={base}/runtime/bus"
+            DISPLAY=require_real_display(
+                a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
             ),
         )
-        # Software rendering is for headless/CI only. On a real desktop it
-        # changes animation and scroll smoothness, which is exactly what a
-        # walkthrough is supposed to judge.
-        if prof.get("software_gl"):
-            env.update(
-                GDK_BACKEND="x11",
-                LIBGL_ALWAYS_SOFTWARE="1",
-                WEBKIT_DISABLE_COMPOSITING_MODE="1",
-                WEBKIT_DISABLE_DMABUF_RENDERER="1",
-            )
         with open(log, "wb") as fh:
             p = subprocess.Popen(cmd, stdout=fh, stderr=fh, env=env, start_new_session=True)
     elif OS == "Darwin":
@@ -643,22 +647,12 @@ def cmd_agent(a):
         cfg = LLMConfig.from_env()
         if getattr(a, "model", None):
             cfg = replace(cfg, model=a.model)
-        # Two evaluation tracks, deliberately separate:
-        #   screening -> Xvfb/X11, cheap coverage only; never a product verdict
-        #   experience -> real :0 desktop, GPU/compositor/scale, source of truth
-        # Every screening finding must be replayed here before it is reported.
-        # Explicit --profile/--display always win over the mode defaults.
-        if getattr(a, "mode", None):
-            if a.mode == "screening":
-                a.profile = a.profile or "linux-x11"
-                a.display = a.display or ":98"
-            else:
-                a.profile = a.profile or "linux-desktop"
-                a.display = a.display or ":0"
-        # Keep the selected profile's display; without this, `--profile
-        # linux-x11` would silently fall back to the real :0 desktop.
-        if a.backend == "desktop" and not a.display:
-            a.display = profile(a).get("display")
+        if getattr(a, "display", None):
+            require_real_display(a.display)
+        # Keep the selected profile's real display. Virtual displays are not
+        # a supported evaluation environment in this project.
+        if a.backend == "desktop":
+            a.display = require_real_display(a.display or profile(a).get("display"))
         backend = make_backend(
             a.backend,
             port=a.port,
@@ -675,7 +669,6 @@ def cmd_agent(a):
             max_seconds=a.max_seconds,
             max_total_tokens=a.max_total_tokens,
             dry_run=a.dry_run,
-            mode=getattr(a, "mode", None),
         )
         result = operator.run_loop()
     except (LLMError, OperatorError) as exc:
@@ -772,9 +765,6 @@ def main():
     p.add_argument("--max-steps", type=int, default=20)
     p.add_argument("--max-seconds", type=float, default=600)
     p.add_argument("--max-total-tokens", type=int, default=200000)
-    p.add_argument("--mode", choices=["screening", "experience"], default=None,
-                   help="screening: Xvfb :98, candidate findings only; "
-                        "experience: real :0 desktop, source of truth")
     p.add_argument("--backend", choices=["cdp", "desktop"], default="cdp")
     p.add_argument("--port", type=int, default=9339)
     p.add_argument("--match", default=None, help="CDP page URL substring")

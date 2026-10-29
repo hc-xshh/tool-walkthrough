@@ -12,7 +12,7 @@ Linux 已实测（Ubuntu 22.04 / 24.04 / 26.04）；macOS 与 Windows 的 `wt.py
 
 ## 1. Linux（Ubuntu / Debian）
 
-**默认在真实桌面跑。** 全量走查要覆盖原生文件选择器、系统通知、桌面宠物、电脑操控，这些必须在真实会话验证；Xvfb 只用于 CI / 无人值守冒烟。
+**只跑真实桌面。** 全量走查要覆盖原生文件选择器、系统通知、桌面宠物、电脑操控，这些必须在真实会话验证；本项目不提供虚拟桌面路径。
 
 ```bash
 sudo apt-get update
@@ -21,8 +21,6 @@ sudo apt-get install -y \
   ffmpeg tesseract-ocr tesseract-ocr-chi-sim \
   fonts-noto-cjk \
   chromium-browser
-# 只有跑 Xvfb / CI 时才需要：
-# xvfb openbox dbus-x11 python3-gi gir1.2-gtk-3.0
 ```
 
 - `chromium-browser` 用于出 PDF；已装 Google Chrome 可跳过，脚本会自动找。
@@ -34,8 +32,8 @@ export XAUTHORITY=$(ls /run/user/$(id -u)/.mutter-Xwaylandauth.* 2>/dev/null | h
 python3 harness/wt.py --profile linux-desktop preflight
 ```
 
-- 无头 / CI 才用 Xvfb：`./harness/desktop-up.sh :98 1440x900x24`，然后 `--profile linux-x11`。
-- 真实桌面下不要加 `--disable-gpu`；软件渲染会让动画和滚动明显变慢，影响观感结论。
+- 配置好真实桌面后直接跑：`python3 harness/wt.py --profile linux-desktop preflight`；`--display :98` 会被拒绝。
+- 不要加 `--disable-gpu`；软件渲染会让动画和滚动明显变慢，影响观感结论。
 
 ## 2. macOS
 
@@ -89,8 +87,7 @@ pip install -r harness/requirements.txt
 
 ```bash
 python3 harness/wt.py profiles
-python3 harness/wt.py --profile linux-desktop preflight   # 全量：真实桌面
-python3 harness/wt.py --profile linux-x11 preflight       # 无头 / CI：先跑 desktop-up.sh
+python3 harness/wt.py --profile linux-desktop preflight   # 真实桌面
 python3 harness/wt.py audit runs/<run>      # 走后查本轮证据（--strict 把 WARN 也算失败）
 python3 harness/wt.py coverage runs/<run>   # 页面地图：未归属控件、首访图、状态矩阵、一级入口
 ```
@@ -104,7 +101,6 @@ python3 harness/wt.py coverage runs/<run>   # 页面地图：未归属控件、�
 - `tesseract WARN` → Linux 装 `tesseract-ocr-chi-sim`；macOS 装 `tesseract-lang`；Windows 把安装目录加进 PATH（并确认 `chi_sim` 已装）
 - `chrome WARN` → 装 Chrome / Chromium / Edge，或设 `WALKTHROUGH_CHROME`
 - `display :0 FAIL`（`linux-desktop`）→ 确认在真实图形会话里，`DISPLAY=:0` 与 XAUTHORITY（Xwayland auth 文件）可用，见第 1 节
-- `display :98 FAIL`（`linux-x11`）→ 先跑 `./harness/desktop-up.sh :98 1440x900x24`；`ci` profile 默认 `:99`，同样先起 Xvfb 再预检
 - `cliclick WARN`（macOS）→ 可装可不装；不装则点坐标走 AppleScript
 - macOS 权限没开 → 截图黑屏或点击无效，去“隐私与安全性”补
 
@@ -134,7 +130,7 @@ EOF
 ## 7. 常见问题
 
 **截图全黑 / 窗口不可见**
-- Linux：Xvfb 只认 X11；在真实 Wayland 会话里 Electron 要加 `--ozone-platform=wayland`，在 Xvfb 里相反，`env -u WAYLAND_DISPLAY DISPLAY=:98` 启动。
+- Linux：Wayland 全屏截图走 xdg-desktop-portal；x11grab 只能看到 X11 根窗口。纯 X11 会话可直接用 x11grab。
 - macOS：没给屏幕录制权限。
 - Windows：不在交互式桌面会话，或目标窗口在另一个虚拟桌面。
 

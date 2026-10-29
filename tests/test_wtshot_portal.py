@@ -46,14 +46,20 @@ class WaylandScreenshotTest(unittest.TestCase):
             self.assertTrue(out.exists())
             self.assertTrue(pathlib.Path(str(out) + ".json").exists())
 
-    def test_xvfb_keeps_x11grab(self):
+    def test_virtual_display_is_rejected(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaises(SystemExit) as cm:
+                wtshot.capture_screen(pathlib.Path(tmp) / "shot.png", ":98", "screen")
+            self.assertIn("virtual displays are disabled", str(cm.exception))
+
+    def test_real_x11_session_keeps_x11grab(self):
         with tempfile.TemporaryDirectory() as tmp:
             out = pathlib.Path(tmp) / "shot.png"
 
             def fake_run(cmd, **kwargs):
                 pathlib.Path(cmd[-1]).write_bytes(support.TINY_PNG)
 
-            with mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": "wayland"}, clear=False), \
+            with mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": "x11", "WAYLAND_DISPLAY": ""}, clear=False), \
                mock.patch.object(wtshot, "_portal_screenshot") as portal, \
                mock.patch.object(wtshot, "subprocess") as subprocess, \
                mock.patch.object(wtshot, "_png_size", return_value=(1440, 900)), \
@@ -63,7 +69,7 @@ class WaylandScreenshotTest(unittest.TestCase):
                    "scale": 1.0, "source": "x11",
                }):
                 subprocess.run.side_effect = fake_run
-                meta = wtshot.capture_screen(out, ":98", "screen")
+                meta = wtshot.capture_screen(out, ":0", "screen")
 
             portal.assert_not_called()
             self.assertEqual(meta["source"], "x11")

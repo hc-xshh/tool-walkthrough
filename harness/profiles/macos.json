@@ -6,7 +6,6 @@
   "ocr_lang": "chi_sim+eng",
   "ocr_psm": 11,
   "geometry": "screen",
-  "software_gl": false,
   "isolation": "separate macOS user or VM",
   "notes": "Grant Screen Recording + Accessibility. Retina: screencapture writes physical pixels while clicks use points; shot records the pixel-to-point scale, so use click --shot <png>."
 }

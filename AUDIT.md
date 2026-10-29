@@ -32,7 +32,7 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 | 可视化控制台 | 构建/控制模式通过 | `build_dashboard.py` + `serve_dashboard.py`：15 tasks / 2 runs / 13 results；API 健康、白名单校验、假 driver 启动生命周期；浏览器巡检总览、任务、结果、对比、新建运行 |
 | GitHub Actions | success | run 40863859882，2m0s |
 | Codex L10–L12 | 9/9 pass | 见 `code-eval/reports/2026-10-29-codex-l10-l12.md` |
-| LLM operator 单测 | 19 passed | `test_llm_client` 6 + `test_llm_operator` 13（含 screening candidate 断言） |
+| LLM operator 单测 | 18 passed | `test_llm_client` 6 + `test_llm_operator` 12 |
 | Wayland 桌面截图 | PASS，1920x1080 非黑帧 | `wt.py --profile linux-desktop shot` 走 xdg-desktop-portal；平均 RGB 约 59/63/70，`x11grab` 同机全黑 |
 | LLM operator 本地联调 | done / 4 steps / 1 finding | 本地假 AI 页面 + fake OpenAI 服务，CDP 真实截图、输入、点击；产物在临时目录，未入库 |
 

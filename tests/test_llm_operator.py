@@ -84,7 +84,6 @@ class OperatorTest(unittest.TestCase):
             max_steps=kwargs.pop("max_steps", 5),
             max_seconds=kwargs.pop("max_seconds", 60),
             dry_run=kwargs.pop("dry_run", False),
-            mode=kwargs.pop("mode", None),
         )
         result = op.run_loop()
         return result, run, client, backend
@@ -116,18 +115,6 @@ class OperatorTest(unittest.TestCase):
         data = json.loads((run / "findings.json").read_text(encoding="utf-8"))
         self.assertEqual(data["findings"][0]["severity"], "S2")
         self.assertTrue(data["findings"][0]["screenshot"].endswith("agent-step-01.png"))
-
-    def test_screening_finding_is_a_candidate_not_a_verdict(self):
-        result, run, _client, _backend = self.run_operator([
-            action(action="finding", title="虚拟环境里看到的异常", detail="需真实桌面复核", severity="S2"),
-            action(action="done", summary="完成"),
-        ], mode="screening")
-        data = json.loads((run / "findings.json").read_text(encoding="utf-8"))
-        finding = data["findings"][0]
-        self.assertEqual(finding["environment"], "screening")
-        self.assertEqual(finding["verdict"], "candidate")
-        self.assertEqual(data["mode"], "screening")
-        self.assertEqual(result.findings[0]["verdict"], "candidate")
 
     def test_click_then_done_records_actions_and_after_shot(self):
         result, run, _client, backend = self.run_operator([

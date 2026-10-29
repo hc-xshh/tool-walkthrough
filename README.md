@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.12**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
+当前方法版本：**v6.13**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -34,7 +34,7 @@
 
 Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.py` 走原生截图 / 点击，隔离靠独立用户或虚拟机。
 
-需要：Python 3.9+、git 2.20+（`new-run.sh` 找仓根、钩子和 `code-eval` 的 diff 都要用）、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。跑 `harness/webapp_accept.mjs` 或 `code-eval` 的 L12 需要 Node 20+；`office-eval` 另需 `openpyxl`（`pip install -r office-eval/requirements.txt`）；单文件 HTML / PDF 用 Chrome / Chromium / Edge 生成。Linux 跑真实桌面全量走查不需要 Xvfb；`ffmpeg`、`xdotool` 必装，Xvfb + openbox + dbus 只在无头 / CI 时安装使用。
+需要：Python 3.9+、git 2.20+（`new-run.sh` 找仓根、钩子和 `code-eval` 的 diff 都要用）、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。跑 `harness/webapp_accept.mjs` 或 `code-eval` 的 L12 需要 Node 20+；`office-eval` 另需 `openpyxl`（`pip install -r office-eval/requirements.txt`）；单文件 HTML / PDF 用 Chrome / Chromium / Edge 生成。评测只跑真实桌面；`ffmpeg`、`xdotool` 必装。虚拟桌面路径已移除，不再支持 `:98` / `:99` 或 Xvfb。
 
 完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
 
@@ -89,8 +89,7 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 #    {"02-home.png": "首页", "exclude": ["t6-*"], "redact": {"*": [[10,865,300,75]]}}
 #    另有 --exclude 't6-*'（按图排除）与 --max-figure-height 90mm（压图高）
 
-# Linux 隔离桌面（可选；macOS / Windows 用独立用户或虚拟机）
-./harness/desktop-up.sh :98 1440x900x24
+# Linux：直接使用当前真实桌面（:0）；不提供虚拟桌面
 ```
 
 > macOS / Windows 分支已经实现，但尚未在真机实测；第一次用先跑 `python3 harness/wt.py preflight`，按输出补依赖和权限。
@@ -111,10 +110,9 @@ python3 harness/wt.py --run runs/2026-10-29-<tool> agent \
 ```
 
 - `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
-- `--backend desktop`：Linux/X11 原生桌面，截图 + xdotool；默认用 profile 的 display（`linux-desktop` 是 `:0`，`--profile linux-x11` 是 `:98`），也可用 `--display` 覆盖；`--ocr` 才加 tesseract 文本
-- `--mode screening`：在 `:98` 的 Xvfb 里做低成本筛查，只产生候选问题；**不能直接当产品结论**，每条都要在 `--mode experience` 的真实桌面重放
-- `--mode experience`：在真实 `:0` 桌面跑，GPU、合成器、系统缩放和原生对话框都在；这是产品行为与体验的判据
-- Wayland 下 `:0` 的桌面截图自动走 `xdg-desktop-portal`（`portal-shot.py`），不会再拿 `x11grab` 的黑帧；Xvfb `:98` 仍走 x11grab
+- `--backend desktop`：Linux 真实桌面 `:0`，截图 + xdotool；只接受真实桌面，`--display :98` 会直接报错；`--ocr` 才加 tesseract 文本
+- `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
+- Wayland 下 `:0` 的桌面截图自动走 `xdg-desktop-portal`（`portal-shot.py`），不会再拿 `x11grab` 的黑帧
 - `--dry-run`：只观察和计划，不点击；`--max-steps` / `--max-total-tokens` 控成本
 - 产物：`shots/agent-step-*.png`、`events.jsonl`、`findings.json`、`agent-summary.md`
 - key 只从环境变量读取，不接受命令行参数；不要写进仓库或报告。不要把明文 key 留在 shell 历史里，可用 `read -rs WT_LLM_API_KEY && export WT_LLM_API_KEY` 或密钥管理器
@@ -174,11 +172,11 @@ python3 harness/wt.py audit runs/<run>
 **Profiles**：
 
 ```bash
-python3 harness/wt.py profiles          # 列出 linux-desktop / linux-x11 / macos / windows / ci
+python3 harness/wt.py profiles          # 列出 linux-desktop / macos / windows
 python3 harness/wt.py --profile linux-desktop preflight
 ```
 
-profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选（Linux 默认 `linux-desktop`，Xvfb 用 `linux-x11`）。
+profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语言、隔离方式；`--profile` 不传时按 OS 自动选（Linux 只有真实桌面 `linux-desktop`）。
 
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
@@ -196,7 +194,7 @@ python3 verify_all.py --strict   # SKIP 也算失败，适合发布门禁
 
 用例在临时目录里造"假 run"，只改一处再断言工具的反应；改判据时先跑一遍，别让"拦住偷懒"的检查在重构里悄悄失效（`tests/README.md`）。
 
-**真实桌面优先**：全量走查默认在现有 GNOME 会话跑。`linux-desktop` 用 `DISPLAY=:0` + Xwayland auth，保留 GPU、原生文件选择器、通知、桌面宠物和电脑操控。`linux-x11` 与 `ci` 才设 `LIBGL_ALWAYS_SOFTWARE=1` 走软件渲染（由 profile 的 `software_gl` 字段决定），只用于 CI / 无人值守冒烟；真实桌面上不要加 `--disable-gpu`，否则动画和滚动会变慢，观感结论会失真。
+**只跑真实桌面**：全量走查在现有 GNOME 会话跑。`linux-desktop` 用 `DISPLAY=:0` + Xwayland auth，保留 GPU、原生文件选择器、通知、桌面宠物和电脑操控；代码会拒绝 `:98` / `:99` 等虚拟显示，避免把虚拟环境的偏差当成产品问题。
 
 **版本锚定**：`harness/harness.lock` 记录 `wt_version`、最低 Python / tesseract 版本和已实测平台；`preflight` 会对照它给出 WARN。报告附录建议带上 `harness.json` 的版本信息。
 
@@ -208,7 +206,7 @@ python3 verify_all.py --strict   # SKIP 也算失败，适合发布门禁
 | 点击 | `xdotool` | `cliclick`，没有则 AppleScript | `ctypes`（user32） |
 | OCR | tesseract | tesseract（brew） | tesseract（PATH） |
 | Electron / CDP | `cdp.py` | `cdp.py` | `cdp.py` |
-| 隔离 | 默认真实桌面；Xvfb 隔离仅 CI/无头 | 独立 macOS 用户或虚拟机 | 独立用户或虚拟机 |
+| 隔离 | 真实桌面 `:0`；不提供虚拟桌面 | 独立 macOS 用户或虚拟机 | 独立用户或虚拟机 |
 | 出 PDF | Chrome / Chromium | Chrome / Chromium / Edge | Chrome / Chromium / Edge |
 | Git 钩子 | bash | bash | Git Bash |
 
@@ -227,7 +225,7 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 - `python3 harness/wt.py preflight`：三平台统一预检（Python、tesseract、Chrome、截图/点击工具、Linux display）。
 - `node harness/webapp_accept.mjs --dir <project> --out accept.json`：全栈 TaskFlow 参考验收（43 项，随机端口 + 全新 DB + 进程树回收）。全过退 0，任一 FAIL 退 1；结果 JSON 照常写出。
 - `wt.py shot|click|ocr|launch|new-run|report`：三平台统一入口；命令参数放在 `--` 之后（`launch --log x -- /path/app`）。
-- `preflight.sh`、`desktop-up.sh`、`app-launch.sh`、`shot.sh`、`click.sh`、`portal-shot.py` 是 Linux 原生脚本，保留兼容；跨平台优先用 `wt.py`。
+- `preflight.sh`、`shot.sh`、`click.sh`、`portal-shot.py` 是 Linux 原生脚本，保留兼容；跨平台优先用 `wt.py`。
 
 ## 方法要点
 
@@ -244,7 +242,7 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 - 单评分者（尤其 AI）严重度不可信；S3/S4 必须人工复核。
 - 截图读屏得到的图标含义属于推断，标「推断」或「未核实」。
 - 不把「发现的问题多」当质量信号；AI 会多报，也会有误报。
-- 不能交：托盘 / 系统通知 / 文件选择器 / 拖拽 / 自启 / 自动更新 / 多显示器；Xvfb 下的性能与启动耗时；移动端；企业后台；真实扣费；服务端行为；动效细节。
+- 不能交：托盘 / 系统通知 / 文件选择器 / 拖拽 / 自启 / 自动更新 / 多显示器；性能与启动耗时（需要在真实桌面单独量）；移动端；企业后台；真实扣费；服务端行为；动效细节。
 
 ## 来源与许可
 

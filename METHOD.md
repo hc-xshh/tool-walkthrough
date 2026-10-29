@@ -1,6 +1,6 @@
-# 走查方法 v6.12
+# 走查方法 v6.13
 
-- 方法版本：v6.12
+- 方法版本：v6.13
 - 最后更新：2026-10-29
 - 变更记录：见 [`CHANGELOG.md`](CHANGELOG.md)
 
@@ -139,7 +139,7 @@ python3 harness/wt.py coverage runs/<run>     # 列出没有归属的控件，�
 
 ### Step 4 执行与取证
 
-- **环境保真优先**：全量走查在真实桌面会话执行（Linux: GNOME/Xwayland, `DISPLAY=:0` + `XAUTHORITY`），保留 GPU、原生弹窗、通知、桌面宠物和电脑操控；只有 CI / 无人值守冒烟才用 Xvfb
+- **环境保真优先**：全量走查只在真实桌面会话执行（Linux: GNOME/Xwayland, `DISPLAY=:0` + `XAUTHORITY`），保留 GPU、原生弹窗、通知、桌面宠物和电脑操控；虚拟桌面路径已移除
 - 驱动优先用 CDP（应用内点击/输入），原生文件选择器、系统弹窗再用窗口截图或 AT-SPI 读取
 - 每个任务至少一对「动作前 / 动作后」截图；失败时保留错误原文
 - **任务执行 trace 必做**：点开「思考 / 工具调用 / 执行工具 N 次」，记录工具名、命令或参数、返回结果、耗时；截「折叠 / 展开」两张图；正文落 `trace/task-trace.md`。只截最终答案不算看过执行过程
@@ -341,13 +341,13 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 
 | 项 | 做法 | 原因 |
 |---|---|---|
-| 桌面 | 真实桌面（`linux-desktop`）跑全量；Xvfb（X11）+ openbox 只用于 CI / 无头冒烟 | 原生弹窗、通知、电脑操控必须在真实会话验证；Xvfb 可截图、可点 |
+| 桌面 | 真实桌面（`linux-desktop`）跑全量；虚拟桌面不支持 | 原生弹窗、通知、电脑操控必须在真实会话验证，虚拟环境的偏差不能算产品问题 |
 | DBus | 每次走查一个私有 session bus | 避免命中真实实例的单实例锁 |
 | HOME | 独立目录（`WALKTHROUGH_BASE/home`） | 得到真正的首次安装状态 |
-| 应用后端 | Xvfb / `linux-x11` 下强制 `GDK_BACKEND=x11`、软件渲染（`software_gl`）；`linux-desktop` 保留 GPU | Wayland 原生窗口在 Xvfb 里不可见；真实桌面不能用软件渲染代替 |
+| 应用后端 | 真实桌面保留 GPU、合成器和系统缩放；不强制软件渲染 | 软件渲染会改变动画和滚动观感，体验结论会失真 |
 | 登录态 | 需要账号的工具用真实 HOME 起在隔离桌面 | 用户登录一次，后续复用 |
 
-已知限制：隔离 HOME 不代表老用户升级；Xvfb 字体/DPI 与真机有差异；Electron 走 Wayland 时要另加 `--ozone-platform=wayland`。
+已知限制：隔离 HOME 不代表老用户升级；Electron 走 Wayland 时要按产品实际平台启动；虚拟桌面不再作为评测环境。
 
 **安装包也要验**：Linux 上先 `dpkg-deb -f x.deb Depends`，装完检查 Electron 的 `chrome-sandbox` 是否为 `4755 root`；不是就可能启动失败（实测某 5.x 版 deb 为 755，必须 `--no-sandbox` 才能起；同样权限值在另一个产品上不一定崩，必须逐个启动实测）。
 
@@ -363,7 +363,7 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 - **先清 `ELECTRON_RUN_AS_NODE`**：agent 宿主常把它导出给子进程，Electron 会退化成 Node——现象是启动即退出（exit 9）、`--version` 打出 Node 版本、CDP 端口永远不开。`wt.py launch` 已对子进程剥离并提示，`preflight` 会 WARN；手工启动时自己 unset
 - **窗口被遮挡时先 `wt.py focus <进程名>`**：Chromium 会节流不可见窗口，`cdp.py text` 还能用，但 `shot` 会超时。批量跑任务前先聚焦一次，别把超时当产品问题
 - 登录态：Electron 常放在 `~/.<app>` 或 `~/.config/<App>`；同 HOME 挂到隔离桌面即可复用。token 走 keyring 时，必须带真实 `DBUS_SESSION_BUS_ADDRESS` 与 `XDG_RUNTIME_DIR`
-- 单实例锁：同一 HOME 先关掉真实桌面实例，再在 Xvfb 里起
+- 单实例锁：同一用户先关掉真实桌面实例，再启动走查副本
 - 连不上先看 403：Chromium 拒绝默认 Origin，客户端需 `suppress_origin=True`
 - 选项文本常带序号（`1\n允许读取`），精确匹配点不到；用 `cdp.py clickel 允许读取 --nth 1` 指定第 2 个匹配
 - **原生菜单不在 DOM 也不在 UIA 树里**：标题栏菜单（文件/编辑/…）用真实鼠标打开，再截整屏读条目；不要因为 `cdp.py text` 看不到就判定「菜单是空的」
@@ -382,7 +382,7 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 
 能交：任务是否走得通、界面文案与信息层级、空态与错误态、导航与入口、产物是否可找到、安装与首启。
 
-不能交：托盘/系统通知/文件选择器/拖拽/自启/自动更新/多显示器；Xvfb 下的性能与启动耗时；iOS/Android/小程序/鸿蒙；企业版后台；真实扣费；服务端行为与模型身份；动效细节；需要真实办公数据授权的连接器。
+不能交：托盘/系统通知/文件选择器/拖拽/自启/自动更新/多显示器；性能与启动耗时（需在真实桌面单独量）；iOS/Android/小程序/鸿蒙；企业版后台；真实扣费；服务端行为与模型身份；动效细节；需要真实办公数据授权的连接器。
 
 ## 11. 不做的事
 

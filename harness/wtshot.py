@@ -172,13 +172,17 @@ def _portal_screenshot(out):
     subprocess.run([py, str(helper), "--out", str(out)], check=True)
 
 
-def capture_screen(out, disp=":98", geom=""):
+def capture_screen(out, disp=":0", geom=""):
     """Grab the screen to `out` and return its desktop metadata."""
     out = Path(out)
     portal = False
     if OS == "Linux":
+        if str(disp).split(".")[0] != ":0":
+            raise SystemExit(
+                f"virtual displays are disabled ({disp}); use the real desktop DISPLAY=:0"
+            )
         # In a Wayland session :0 is the real desktop; x11grab would be black.
-        # Xvfb (:98) remains on x11grab and is the deterministic functional path.
+        # A real X11 session keeps the x11grab path; only Wayland needs the portal.
         portal = (disp == ":0" and _wayland_session()
                   and (not geom or geom == "screen")
                   and os.environ.get("WT_SCREENSHOT", "").lower() != "x11")
@@ -188,8 +192,7 @@ def capture_screen(out, disp=":98", geom=""):
             except (OSError, subprocess.CalledProcessError) as exc:
                 raise SystemExit(
                     "wayland screenshot failed: xdg-desktop-portal returned no image; "
-                    "grant the screenshot permission once, or use --profile linux-x11 "
-                    "for a deterministic X11 desktop"
+                    "grant the screenshot permission once, then retry"
                 ) from exc
         else:
             if not geom or geom == "screen":

@@ -93,13 +93,6 @@ class CliTest(unittest.TestCase):
         self.assertEqual(res.returncode, 2, res.stdout)
         self.assertIn("native click disabled", res.stderr)
 
-    def test_agent_help_names_both_evaluation_modes(self):
-        res = run("agent", "--help")
-        self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("screening", res.stdout)
-        self.assertIn("experience", res.stdout)
-        self.assertIn("candidate findings only", res.stdout)
-
     def test_agent_requires_a_key_before_starting_a_run(self):
         env = dict(os.environ)
         env.pop("WT_LLM_API_KEY", None)
@@ -111,6 +104,13 @@ class CliTest(unittest.TestCase):
         self.assertEqual(res.returncode, 1)
         self.assertIn("WT_LLM_API_KEY", res.stderr)
         self.assertNotIn("Traceback", res.stderr)
+
+    def test_virtual_display_is_rejected_at_the_cli_boundary(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run("--profile", "linux-desktop", "shot", str(pathlib.Path(tmp) / "x.png"),
+                      "--display", ":98")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("virtual displays are disabled", res.stderr)
 
     def test_preflight_shows_the_input_mode(self):
         env = dict(os.environ, WALKTHROUGH_NO_NATIVE_INPUT="1")

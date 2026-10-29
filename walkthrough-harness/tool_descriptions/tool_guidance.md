@@ -32,7 +32,7 @@ Method content is not repeated here: evidence rules and before/after pairing liv
 - Windows: write helper `.ps1` files as UTF-8 **with BOM**; PowerShell 5.1 reads BOM-less files as ANSI and Chinese window titles break at parse time.
 - Native folder pickers: `harness/pick-folder.ps1 "<path>"` finds the `#32770` dialog owned by the app, sets the `Edit` child with `WM_SETTEXT`, and presses button id 1 (`BM_CLICK`). Works for the legacy 「选择文件夹」 dialog; modern IFileDialog needs the same idea with different control ids.
 - Occluded windows: Chromium throttles them, so `cdp.py text` works while `cdp.py shot` hangs. Run `wt.py focus <process>` before a batch of screenshots.
-- Linux: `wt.py launch` / `app-launch.sh` set `WALKTHROUGH_HOME`, `WALKTHROUGH_DBUS`, `WALKTHROUGH_BASE`; display comes from the profile.
+- Linux: `wt.py launch` starts the app in the current real session (`:0`); it does not create a private HOME/DBus or a virtual desktop.
 
 ## Native menus and approvals
 

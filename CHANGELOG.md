@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.13（2026-10-29，移除虚拟桌面路径）
+
+- 评测只允许真实桌面：`wt.py shot/click/launch/preflight/agent` 拒绝 `:98`、`:99` 等虚拟显示，`wtshot.capture_screen` 同样硬拒绝。
+- 删除 `linux-x11` / `ci` profile、`desktop-up.sh`、`app-launch.sh`，以及 `wt.py launch` 的隔离 HOME / DBus / 软件渲染分支；启动应用直接进用户真实会话。
+- `--mode screening|experience` 与 findings 的 candidate/verdict 一并移除；真实桌面结果就是唯一评测结果。
+- Wayland `:0` 仍自动走 `xdg-desktop-portal`；真实 X11 会话仍用 x11grab。
+- 单元测试 130 条；`verify_all.py --strict` 通过。
+
 ## v6.12（2026-10-29，评测口径：screening / experience）
 
 - `wt.py agent --mode screening`：在 `:98` Xvfb 做低成本筛查，findings 标记为 `candidate`，不能直接当产品结论；`--mode experience` 在真实 `:0` 桌面跑，标记为 `confirmed`。

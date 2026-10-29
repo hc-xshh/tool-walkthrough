@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
-# Preflight checks before a desktop walkthrough.
-# Usage: preflight.sh [--display :98] [--app <name>] [--port 9339]
+# Preflight checks before a real-desktop walkthrough.
+# Usage: preflight.sh [--display :0] [--app <name>] [--port 9339]
 #                     [--sandbox /path/to/chrome-sandbox] [--home-dir /path/to/login-state]
 #
 # Nothing here is tied to a specific product: pass --app, and optionally point
 # --sandbox / --home-dir at the paths that apply to the tool under test.
 set -uo pipefail
 
-DISP=":98"
+DISP=":0"
 APP=""
 PORT=""
 SANDBOX=""
@@ -27,9 +27,14 @@ done
 fail=0
 say() { printf '%-28s %s\n' "$1" "$2"; }
 
+case "$DISP" in
+  :0|:0.*) ;;
+  *) say "display $DISP" "FAIL (virtual displays are disabled; use :0)"; exit 2 ;;
+esac
+
 # 0. host dependencies
 missing=""
-for bin in git Xvfb openbox dbus-daemon ffmpeg xdotool tesseract; do
+for bin in git ffmpeg xdotool tesseract; do
   command -v "$bin" >/dev/null 2>&1 || missing="$missing $bin"
 done
 if [ -z "$missing" ]; then
@@ -42,7 +47,7 @@ fi
 if xdpyinfo -display "$DISP" >/dev/null 2>&1; then
   say "display $DISP" "PASS"
 else
-  say "display $DISP" "FAIL (start desktop-up.sh)"; fail=1
+  say "display $DISP" "FAIL (start a real desktop session, or export DISPLAY/XAUTHORITY)"; fail=1
 fi
 
 # 2. app package / binary
