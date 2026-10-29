@@ -93,6 +93,13 @@ class CliTest(unittest.TestCase):
         self.assertEqual(res.returncode, 2, res.stdout)
         self.assertIn("native click disabled", res.stderr)
 
+    def test_agent_help_names_both_evaluation_modes(self):
+        res = run("agent", "--help")
+        self.assertEqual(res.returncode, 0, res.stderr)
+        self.assertIn("screening", res.stdout)
+        self.assertIn("experience", res.stdout)
+        self.assertIn("candidate findings only", res.stdout)
+
     def test_agent_requires_a_key_before_starting_a_run(self):
         env = dict(os.environ)
         env.pop("WT_LLM_API_KEY", None)

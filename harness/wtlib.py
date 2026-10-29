@@ -13,7 +13,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OS = platform.system()  # Linux / Darwin / Windows
-WT_VERSION = "1.8.0"
+WT_VERSION = "1.9.0"
 PROFILES_DIR = ROOT / "harness" / "profiles"
 LOCK_FILE = ROOT / "harness" / "harness.lock"
 

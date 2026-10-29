@@ -9,7 +9,7 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 
 - **可用**：`wt.py` 的 13 个子命令、`code-eval` 的 15 个任务、`office-eval` 的 1 个任务都有可执行入口；
   之前 `preflight` 在 agent shell 里会误报 `display :0` 失败，已修。
-- **可靠**：126 条单元测试、51 条 code-eval 自测、5 条 office 自测、15 个任务规格检查全过；
+- **可靠**：130 条单元测试、51 条 code-eval 自测、5 条 office 自测、15 个任务规格检查全过；
   `verify_all.py` 一条命令可复跑；GitHub Actions 上的 `verify` 已实跑通过（1m12s）。
 - **可解释**：判分结果有 verdict / score / requirements / deliverable / claims / quality / usage；
   记分卡带 token 成本；报告有固定六节和边界。文档里的任务数、测试数已和实际对齐。
@@ -21,7 +21,7 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 | 检查 | 结果 | 证据 |
 |---|---|---|
 | `wt.py preflight` | PASS | Python / git / tesseract / Chrome / CDP / ffmpeg / xdotool / display :0 全 PASS |
-| 单元测试 | 126 passed | `python3 -m unittest discover -s tests -q` |
+| 单元测试 | 130 passed | `python3 -m unittest discover -s tests -q` |
 | code-eval 任务规格 | 0 warnings / 15 tasks | `check_tasks.py --strict` |
 | code-eval 判分自测 | 51/51 | `code-eval/tools/selftest.py` |
 | office-eval 判分自测 | 5/5 | `office-eval/tools/selftest.py` |
@@ -32,7 +32,8 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 | 可视化控制台 | 构建/控制模式通过 | `build_dashboard.py` + `serve_dashboard.py`：15 tasks / 2 runs / 13 results；API 健康、白名单校验、假 driver 启动生命周期；浏览器巡检总览、任务、结果、对比、新建运行 |
 | GitHub Actions | success | run 40841117781，1m36s |
 | Codex L10–L12 | 9/9 pass | 见 `code-eval/reports/2026-10-29-codex-l10-l12.md` |
-| LLM operator 单测 | 17 passed | `test_llm_client` 6 + `test_llm_operator` 12 |
+| LLM operator 单测 | 19 passed | `test_llm_client` 6 + `test_llm_operator` 13（含 screening candidate 断言） |
+| Wayland 桌面截图 | PASS，1920x1080 非黑帧 | `wt.py --profile linux-desktop shot` 走 xdg-desktop-portal；平均 RGB 约 59/63/70，`x11grab` 同机全黑 |
 | LLM operator 本地联调 | done / 4 steps / 1 finding | 本地假 AI 页面 + fake OpenAI 服务，CDP 真实截图、输入、点击；产物在临时目录，未入库 |
 
 ## 发现与处理
@@ -57,7 +58,7 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 - **`webapp_accept` 的 43/43 不能在这里复现**：仓库没有 TaskFlow fixture；这次只验证了失败退出码，没有重跑 43 项。
 - **office-eval 没有真实办公 agent 数据**：只有参考产物与 3 个错误变体。
 - **code-eval 通过率饱和**：Codex 在 L10–L12 9/9 一次过；TRAE 抽测也过。任务能测“会不会”，还测不出“谁更强”。
-- **没有覆盖率统计**：`pytest-cov` 未接入；126 条测试覆盖的是工具行为，不是全部分支。
+- **没有覆盖率统计**：`pytest-cov` 未接入；130 条测试覆盖的是工具行为，不是全部分支。
 - **`runs/` 只在本机**：约 102MB，未备份；换机/误删会丢证据。
 - **`webapp_accept` 仍绑定 TaskFlow 的 43 项检查**：换项目要复制并改检查，不是通用验收器。
 - **LLM operator 只用假模型/假页面联调过**：真实 OpenAI-compatible 账号、真实 AI 产品、真实登录态还没跑；桌面后端只在 Linux 代码路径上验证了分派，没有真机点击。

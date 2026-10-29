@@ -421,11 +421,12 @@ def _observation_prompt(obs: Observation, goal: str, step: int, max_steps: int,
 
 
 def _write_outputs(run: Path, result: RunResult, goal: str, model: str,
-                   started: str, finished: str) -> None:
+                   started: str, finished: str, mode: str | None = None) -> None:
     run.mkdir(parents=True, exist_ok=True)
     payload = {
         "schema": 1,
         "goal": goal,
+        "mode": mode,
         "model": model,
         "status": result.status,
         "summary": result.summary,
@@ -442,6 +443,7 @@ def _write_outputs(run: Path, result: RunResult, goal: str, model: str,
         "# LLM 走查记录",
         "",
         f"- 目标：{goal}",
+        f"- 评测模式：{mode or '未声明'}",
         f"- 模型：`{model}`",
         f"- 状态：**{result.status}**",
         f"- 步数：{result.steps}",
@@ -469,7 +471,8 @@ def _write_outputs(run: Path, result: RunResult, goal: str, model: str,
 class Operator:
     def __init__(self, client: ChatClient, backend: Backend, run: Path, goal: str,
                  max_steps: int = 20, max_seconds: float = 600,
-                 max_total_tokens: int = 200_000, dry_run: bool = False):
+                 max_total_tokens: int = 200_000, dry_run: bool = False,
+                 mode: str | None = None):
         self.client = client
         self.backend = backend
         self.run = run
@@ -478,6 +481,7 @@ class Operator:
         self.max_seconds = max(10.0, float(max_seconds))
         self.max_total_tokens = max(1000, int(max_total_tokens))
         self.dry_run = dry_run
+        self.mode = mode
         self.history: list[StepRecord] = []
         self.findings: list[dict[str, Any]] = []
         self.usage: dict[str, Any] = {}
@@ -610,6 +614,10 @@ class Operator:
                         "detail": action.get("detail", ""),
                         "severity": action["severity"],
                         "screenshot": str(obs.screenshot),
+                        "environment": self.mode or "unknown",
+                        "verdict": ("candidate" if self.mode == "screening"
+                                    else "confirmed" if self.mode == "experience"
+                                    else "unverified"),
                     }
                     self.findings.append(finding)
                     self._log(action="agent_finding", step=step, severity=finding["severity"],
@@ -650,7 +658,7 @@ class Operator:
                            usage=dict(self.usage))
         finished = datetime.now().astimezone().isoformat(timespec="seconds")
         _write_outputs(self.run, result, self.goal, self.client.config.model,
-                       self.started, finished)
+                       self.started, finished, self.mode)
         self._log(action="agent_finish", status=status, steps=result.steps,
                   findings=len(self.findings), usage=self.usage)
         return result

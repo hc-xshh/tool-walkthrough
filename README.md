@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.11**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
+当前方法版本：**v6.12**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -112,6 +112,9 @@ python3 harness/wt.py --run runs/2026-10-29-<tool> agent \
 
 - `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
 - `--backend desktop`：Linux/X11 原生桌面，截图 + xdotool；默认用 profile 的 display（`linux-desktop` 是 `:0`，`--profile linux-x11` 是 `:98`），也可用 `--display` 覆盖；`--ocr` 才加 tesseract 文本
+- `--mode screening`：在 `:98` 的 Xvfb 里做低成本筛查，只产生候选问题；**不能直接当产品结论**，每条都要在 `--mode experience` 的真实桌面重放
+- `--mode experience`：在真实 `:0` 桌面跑，GPU、合成器、系统缩放和原生对话框都在；这是产品行为与体验的判据
+- Wayland 下 `:0` 的桌面截图自动走 `xdg-desktop-portal`（`portal-shot.py`），不会再拿 `x11grab` 的黑帧；Xvfb `:98` 仍走 x11grab
 - `--dry-run`：只观察和计划，不点击；`--max-steps` / `--max-total-tokens` 控成本
 - 产物：`shots/agent-step-*.png`、`events.jsonl`、`findings.json`、`agent-summary.md`
 - key 只从环境变量读取，不接受命令行参数；不要写进仓库或报告。不要把明文 key 留在 shell 历史里，可用 `read -rs WT_LLM_API_KEY && export WT_LLM_API_KEY` 或密钥管理器
@@ -180,7 +183,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 107 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 130 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 一条命令跑完整健康检查（单元测试、15 个任务规格、两套自测、Node 语法、Python 编译）：

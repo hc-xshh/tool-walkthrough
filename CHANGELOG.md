@@ -1,5 +1,12 @@
 # Changelog
 
+## v6.12（2026-10-29，评测口径：screening / experience）
+
+- `wt.py agent --mode screening`：在 `:98` Xvfb 做低成本筛查，findings 标记为 `candidate`，不能直接当产品结论；`--mode experience` 在真实 `:0` 桌面跑，标记为 `confirmed`。
+- `findings.json` 增加 `mode` / `environment` / `verdict`；`agent-summary.md` 写明评测模式。
+- Wayland 下 `:0` 的桌面截图自动走 `xdg-desktop-portal`（`portal-shot.py`），避免 `x11grab` 全黑帧；Xvfb `:98` 仍走 x11grab。
+- 单元测试 130 条；新增 `tests/test_wtshot_portal.py` 与 screening candidate 断言。
+
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
 ## v6.11（2026-10-29，LLM 自带走查 operator）

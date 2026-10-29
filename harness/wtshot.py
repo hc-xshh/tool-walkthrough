@@ -6,6 +6,7 @@ import json
 import os
 import re
 import subprocess
+import sys
 import tempfile
 from pathlib import Path
 
@@ -152,21 +153,56 @@ def read_shot_meta(png):
 
 
 
+def _wayland_session():
+    """True when this process is inside a Wayland session (XWayland included)."""
+    return (os.environ.get("XDG_SESSION_TYPE", "").lower() == "wayland"
+            or bool(os.environ.get("WAYLAND_DISPLAY")))
+
+
+def _portal_screenshot(out):
+    """Capture the composited screen through xdg-desktop-portal.
+
+    x11grab only sees the X11 root window. Under GNOME Wayland the app
+    windows live in the compositor, so x11grab produces a black frame even
+    though xdotool can still see XWayland window geometry. The portal is the
+    only supported way to get the real pixels.
+    """
+    helper = Path(__file__).with_name("portal-shot.py")
+    py = "/usr/bin/python3" if Path("/usr/bin/python3").exists() else sys.executable
+    subprocess.run([py, str(helper), "--out", str(out)], check=True)
+
+
 def capture_screen(out, disp=":98", geom=""):
     """Grab the screen to `out` and return its desktop metadata."""
     out = Path(out)
+    portal = False
     if OS == "Linux":
-        if not geom or geom == "screen":
-            w, h = _x11_size(disp)
-            geom = f"{w}x{h}" if w and h else "1440x900"
-        subprocess.run(
-            [
-                "ffmpeg", "-hide_banner", "-loglevel", "error",
-                "-f", "x11grab", "-video_size", geom, "-i", disp,
-                "-frames:v", "1", "-y", str(out),
-            ],
-            check=True, env=dict(os.environ, DISPLAY=disp),
-        )
+        # In a Wayland session :0 is the real desktop; x11grab would be black.
+        # Xvfb (:98) remains on x11grab and is the deterministic functional path.
+        portal = (disp == ":0" and _wayland_session()
+                  and (not geom or geom == "screen")
+                  and os.environ.get("WT_SCREENSHOT", "").lower() != "x11")
+        if portal:
+            try:
+                _portal_screenshot(out)
+            except (OSError, subprocess.CalledProcessError) as exc:
+                raise SystemExit(
+                    "wayland screenshot failed: xdg-desktop-portal returned no image; "
+                    "grant the screenshot permission once, or use --profile linux-x11 "
+                    "for a deterministic X11 desktop"
+                ) from exc
+        else:
+            if not geom or geom == "screen":
+                w, h = _x11_size(disp)
+                geom = f"{w}x{h}" if w and h else "1440x900"
+            subprocess.run(
+                [
+                    "ffmpeg", "-hide_banner", "-loglevel", "error",
+                    "-f", "x11grab", "-video_size", geom, "-i", disp,
+                    "-frames:v", "1", "-y", str(out),
+                ],
+                check=True, env=dict(os.environ, DISPLAY=disp),
+            )
     elif OS == "Darwin":
         subprocess.run(["screencapture", "-x", "-o", str(out)], check=True)
     elif OS == "Windows":
@@ -208,6 +244,17 @@ $g.Dispose(); $bmp.Dispose()
 
     meta = desktop_metrics(out)
     pw, ph = _png_size(out)
+    if portal:
+        # Portal returns the composited image in physical pixels. Compare it
+        # with the X server's logical size to keep click --shot correct under
+        # fractional scaling instead of assuming a 1.0 ratio.
+        lw, lh = _x11_size(disp)
+        meta = {
+            "origin_x": 0, "origin_y": 0,
+            "width": pw or lw, "height": ph or lh,
+            "scale": round(pw / lw, 3) if lw and pw else 1.0,
+            "source": "xdg-desktop-portal",
+        }
     meta["width"] = meta.get("width") or pw
     meta["height"] = meta.get("height") or ph
     meta["screenshot"] = str(out)

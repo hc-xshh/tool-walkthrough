@@ -643,6 +643,18 @@ def cmd_agent(a):
         cfg = LLMConfig.from_env()
         if getattr(a, "model", None):
             cfg = replace(cfg, model=a.model)
+        # Two evaluation tracks, deliberately separate:
+        #   screening -> Xvfb/X11, cheap coverage only; never a product verdict
+        #   experience -> real :0 desktop, GPU/compositor/scale, source of truth
+        # Every screening finding must be replayed here before it is reported.
+        # Explicit --profile/--display always win over the mode defaults.
+        if getattr(a, "mode", None):
+            if a.mode == "screening":
+                a.profile = a.profile or "linux-x11"
+                a.display = a.display or ":98"
+            else:
+                a.profile = a.profile or "linux-desktop"
+                a.display = a.display or ":0"
         # Keep the selected profile's display; without this, `--profile
         # linux-x11` would silently fall back to the real :0 desktop.
         if a.backend == "desktop" and not a.display:
@@ -663,6 +675,7 @@ def cmd_agent(a):
             max_seconds=a.max_seconds,
             max_total_tokens=a.max_total_tokens,
             dry_run=a.dry_run,
+            mode=getattr(a, "mode", None),
         )
         result = operator.run_loop()
     except (LLMError, OperatorError) as exc:
@@ -759,6 +772,9 @@ def main():
     p.add_argument("--max-steps", type=int, default=20)
     p.add_argument("--max-seconds", type=float, default=600)
     p.add_argument("--max-total-tokens", type=int, default=200000)
+    p.add_argument("--mode", choices=["screening", "experience"], default=None,
+                   help="screening: Xvfb :98, candidate findings only; "
+                        "experience: real :0 desktop, source of truth")
     p.add_argument("--backend", choices=["cdp", "desktop"], default="cdp")
     p.add_argument("--port", type=int, default=9339)
     p.add_argument("--match", default=None, help="CDP page URL substring")
