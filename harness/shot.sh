@@ -1,16 +1,11 @@
 #!/usr/bin/env bash
-# Take a screenshot of the real desktop.
+# Take a screenshot of the real desktop via wt.py (portal on Wayland).
 # Usage: shot.sh <out.png> [DISPLAY] [geometry]
 set -euo pipefail
+ROOT="$(cd "$(dirname "$0")" && pwd)"
 OUT="${1:?usage: shot.sh <out.png> [display] [geometry]}"
 DISP="${2:-${WALKTHROUGH_DISPLAY:-:0}}"
-case "$DISP" in
-  :0|:0.*) ;;
-  *) echo "virtual displays are disabled ($DISP); use DISPLAY=:0" >&2; exit 2 ;;
-esac
-
-GEOM="${3:-1440x900}"
-mkdir -p "$(dirname "$OUT")"
-DISPLAY="$DISP" ffmpeg -hide_banner -loglevel error \
-  -f x11grab -video_size "$GEOM" -i "$DISP" -frames:v 1 -y "$OUT"
-echo "$OUT"
+GEOM="${3:-}"
+args=(--profile linux-desktop shot "$OUT" --display "$DISP")
+[ -n "$GEOM" ] && args+=(--geometry "$GEOM")
+exec python3 "$ROOT/wt.py" "${args[@]}"

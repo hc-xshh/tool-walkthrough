@@ -8,5 +8,5 @@
   "display": ":0",
   "geometry": "screen",
   "isolation": "existing GNOME session; no isolation",
-  "notes": "Default for full walkthroughs. Needs DISPLAY=:0 and XAUTHORITY (Xwayland auth file) for native dialogs; CDP for app-internal actions. Keeps the GPU on purpose: forcing software GL would change the animation and scroll feel this profile exists to judge."
+  "notes": "Only real-desktop profile; virtual/Xvfb displays are rejected. Default for full walkthroughs. Needs DISPLAY=:0 and XAUTHORITY (Xwayland auth file) for native dialogs; CDP for app-internal actions. Keeps the GPU on purpose: forcing software GL would change the animation and scroll feel this profile exists to judge."
 }

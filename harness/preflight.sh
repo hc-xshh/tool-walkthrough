@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Preflight checks before a real-desktop walkthrough.
+# Preflight checks before a real-desktop walkthrough (real DISPLAY=:0 only).
 # Usage: preflight.sh [--display :0] [--app <name>] [--port 9339]
 #                     [--sandbox /path/to/chrome-sandbox] [--home-dir /path/to/login-state]
 #
@@ -48,6 +48,37 @@ if xdpyinfo -display "$DISP" >/dev/null 2>&1; then
   say "display $DISP" "PASS"
 else
   say "display $DISP" "FAIL (start a real desktop session, or export DISPLAY/XAUTHORITY)"; fail=1
+fi
+
+# 1b. logind: display :0 is not enough; require an active seated session.
+if command -v loginctl >/dev/null 2>&1; then
+  sid="${XDG_SESSION_ID:-}"
+  if [ -z "$sid" ]; then
+    sid=$(loginctl list-sessions --no-legend 2>/dev/null | awk -v u="$(id -u)" '$2==u && $4!="-"{print $1; exit}')
+  fi
+  if [ -n "$sid" ]; then
+    active=$(loginctl show-session "$sid" -p Active --value 2>/dev/null)
+    seat=$(loginctl show-session "$sid" -p Seat --value 2>/dev/null)
+    stype=$(loginctl show-session "$sid" -p Type --value 2>/dev/null)
+    if [ "$active" = "yes" ] && [ -n "$seat" ] && [ "$seat" != "-" ]; then
+      say "logind session" "PASS ($stype, $seat)"
+      if [ "$stype" = "wayland" ]; then
+        runtime="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}"
+        wd="${WAYLAND_DISPLAY:-wayland-0}"
+        if [ -S "$runtime/$wd" ]; then
+          say "wayland socket" "PASS ($runtime/$wd)"
+        else
+          say "wayland socket" "FAIL ($runtime/$wd missing)"; fail=1
+        fi
+      fi
+    else
+      say "logind session" "FAIL (no active seated session)"; fail=1
+    fi
+  else
+    say "logind session" "FAIL (no user session)"; fail=1
+  fi
+else
+  say "logind session" "WARN (loginctl missing)"
 fi
 
 # 2. app package / binary

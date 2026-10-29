@@ -112,6 +112,14 @@ class CliTest(unittest.TestCase):
         self.assertNotEqual(res.returncode, 0)
         self.assertIn("virtual displays are disabled", res.stderr)
 
+    def test_launch_rejects_headless_arguments(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            res = run("--profile", "linux-desktop", "launch",
+                      "--log", str(pathlib.Path(tmp) / "app.log"),
+                      "--", "/bin/echo", "--headless")
+        self.assertNotEqual(res.returncode, 0)
+        self.assertIn("refusing headless launch argument", res.stderr)
+
     def test_preflight_shows_the_input_mode(self):
         env = dict(os.environ, WALKTHROUGH_NO_NATIVE_INPUT="1")
         res = subprocess.run(

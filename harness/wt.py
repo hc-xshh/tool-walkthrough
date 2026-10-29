@@ -15,7 +15,8 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py coverage runs/2026-10-19-tool
   python3 harness/wt.py evidence --strict runs/2026-10-19-tool
 
-Linux uses X11 tooling (ffmpeg/xdotool). macOS uses screencapture and
+Linux uses X11 tooling (ffmpeg/xdotool). Only the real desktop :0 is
+supported; :98/:99/Xvfb are rejected. macOS uses screencapture and
 cliclick (or AppleScript). Windows uses PowerShell/.NET and ctypes.
 CDP stays in cdp.py and works on all three.
 
@@ -65,12 +66,13 @@ def launch_env(base=None):
 
 
 def require_real_display(disp):
-    """Reject virtual displays; this harness only evaluates the real desktop."""
+    """Reject virtual displays and prove the Linux session is a real desktop."""
     value = str(disp or ":0").strip()
     if value.split(".")[0] != ":0":
         raise SystemExit(
             f"virtual displays are disabled ({value}); use the real desktop DISPLAY=:0"
         )
+    verify_real_session(value)
     return value
 
 
@@ -568,6 +570,17 @@ def cmd_launch(a):
     if not cmd and OS != "Darwin":
         # --app only means "open -a <app>", which exists on macOS alone
         raise SystemExit(f"launch needs a command on {OS} (--app is macOS-only)")
+    # Headless commands would bypass the real-window gate and produce a
+    # different UI from the one users see. Refuse them before spawning.
+    for token in cmd:
+        low = str(token).lower()
+        if low == "--headless" or low.startswith("--headless=") \
+                or low == "--ozone-platform=headless" \
+                or low.startswith("--virtual-time-budget"):
+            raise SystemExit(
+                f"refusing headless launch argument {token!r}; "
+                "the walkthrough must use the real desktop window"
+            )
     if OS == "Linux":
         # Launch into the user's real session. Do not replace HOME, DBus or
         # the runtime dir: login state, keyring, notifications and native

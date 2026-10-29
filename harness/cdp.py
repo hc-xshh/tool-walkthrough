@@ -20,9 +20,13 @@ iframe target directly. Their content often lives one level deeper, so
 `--nested` swaps `document` for the inner iframe document.
 
 
+Only the real desktop is allowed. On Linux the target must have a visible
+window on DISPLAY=:0 inside an active seated session; headless and virtual
+targets are refused.
+
 Why: a WebView/Electron UI is a DOM. Reading it beats OCR, and clicking by
 label beats guessing coordinates. Use this before falling back to
-ffmpeg + tesseract on the X11 desktop.
+ffmpeg + tesseract on the real desktop.
 
 If WALKTHROUGH_RUN is set, each operation appends one line to
 <run>/events.jsonl so `wt.py audit` can see CDP steps too.
@@ -40,6 +44,8 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+from wtlib import verify_real_session
+
 try:
     import requests
     import websocket
@@ -56,7 +62,7 @@ VK = {
 }
 
 
-def require_real_window(title):
+def require_real_window(title, disp=":0"):
     """Refuse CDP targets that are not backed by a visible desktop window.
 
     A headless Chromium has no X11/Wayland window; attaching to it would make
@@ -80,6 +86,7 @@ def require_real_window(title):
     p = subprocess.run(
         [xdo, "search", "--onlyvisible", "--name", re.escape(title)],
         capture_output=True, text=True, timeout=10,
+        env=dict(os.environ, DISPLAY=disp),
     )
     if p.returncode != 0 or not (p.stdout or "").strip():
         raise SystemExit(
@@ -160,7 +167,14 @@ class CDP:
         self.ws = websocket.create_connection(page_ws(port, match, kind), timeout=30, suppress_origin=True)
         self.n = 0
         self.nested = nested
-        require_real_window(self.eval("document.title"))
+        disp = os.environ.get("DISPLAY") or ":0"
+        if platform.system() == "Linux":
+            if disp.split(".")[0] != ":0":
+                raise SystemExit(
+                    f"cdp: virtual displays are disabled ({disp}); use DISPLAY=:0"
+                )
+            verify_real_session(disp)
+            require_real_window(self.eval("document.title"), disp)
 
     def cmd(self, method, params=None):
         self.n += 1

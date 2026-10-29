@@ -1,5 +1,8 @@
 #!/usr/bin/env python3
-"""Screen capture and the pixel <-> click coordinate mapping."""
+"""Screen capture and pixel mapping for the real desktop (:0 only).
+
+Virtual displays are rejected; Wayland :0 uses xdg-desktop-portal.
+"""
 from __future__ import annotations
 
 import json
@@ -10,7 +13,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from wtlib import OS, which_any
+from wtlib import OS, verify_real_session, which_any
 
 __all__ = [
     "enable_dpi_awareness", "desktop_metrics", "shot_meta_path", "read_shot_meta",
@@ -181,11 +184,11 @@ def capture_screen(out, disp=":0", geom=""):
             raise SystemExit(
                 f"virtual displays are disabled ({disp}); use the real desktop DISPLAY=:0"
             )
+        verify_real_session(disp)
         # In a Wayland session :0 is the real desktop; x11grab would be black.
         # A real X11 session keeps the x11grab path; only Wayland needs the portal.
         portal = (disp == ":0" and _wayland_session()
-                  and (not geom or geom == "screen")
-                  and os.environ.get("WT_SCREENSHOT", "").lower() != "x11")
+                  and (not geom or geom == "screen"))
         if portal:
             try:
                 _portal_screenshot(out)

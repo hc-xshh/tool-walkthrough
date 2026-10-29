@@ -30,7 +30,9 @@ class WaylandScreenshotTest(unittest.TestCase):
                 os.environ,
                 {"XDG_SESSION_TYPE": "wayland", "WAYLAND_DISPLAY": "wayland-0"},
                 clear=False,
-            ), mock.patch.object(wtshot, "_portal_screenshot", side_effect=fake_portal), \
+            ), mock.patch.object(wtshot, "verify_real_session", return_value={
+                   "type": "wayland", "display": ":0", "source": "test",
+               }), mock.patch.object(wtshot, "_portal_screenshot", side_effect=fake_portal), \
                mock.patch.object(wtshot, "_png_size", return_value=(1920, 1080)), \
                mock.patch.object(wtshot, "_x11_size", return_value=(1920, 1080)), \
                mock.patch.object(wtshot, "desktop_metrics", return_value={
@@ -60,7 +62,9 @@ class WaylandScreenshotTest(unittest.TestCase):
                 pathlib.Path(cmd[-1]).write_bytes(support.TINY_PNG)
 
             with mock.patch.dict(os.environ, {"XDG_SESSION_TYPE": "x11", "WAYLAND_DISPLAY": ""}, clear=False), \
-               mock.patch.object(wtshot, "_portal_screenshot") as portal, \
+               mock.patch.object(wtshot, "verify_real_session", return_value={
+                   "type": "x11", "display": ":0", "source": "test",
+               }), mock.patch.object(wtshot, "_portal_screenshot") as portal, \
                mock.patch.object(wtshot, "subprocess") as subprocess, \
                mock.patch.object(wtshot, "_png_size", return_value=(1440, 900)), \
                mock.patch.object(wtshot, "_x11_size", return_value=(1440, 900)), \

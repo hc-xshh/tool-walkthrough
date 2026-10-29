@@ -3,7 +3,7 @@
 检查项自己的回归测试。标准库 `unittest`，不需要装任何东西：
 
 ```bash
-python -m unittest discover -s tests -v     # 132 个用例，约 5 秒
+python -m unittest discover -s tests -v     # 137 个用例，约 5 秒
 python -m pytest tests -q                   # 装了 pytest 也能跑
 ```
 
@@ -31,6 +31,7 @@ python -m pytest tests -q                   # 装了 pytest 也能跑
 | `test_xlsx_audit.py` | 图片跨格复用、超出单元格、行高 >409.5pt、缺失证据标注、状态冲突 |
 | `test_llm_client.py` | OpenAI-compatible 请求、图片 data URL、429 重试、401 不重试、key 脱敏、缺 key 提示 |
 | `test_llm_operator.py` | operator 动作解析、done/finding/click、越界、JSON 纠正、步数上限、重复动作、typed text 不落日志、dry-run |
+| `test_real_session.py` | loginctl 活跃会话/seat、Wayland socket、Xvfb 无真实输出、`:98` 拒绝 |
 | `test_wtshot_portal.py` | Wayland `:0` 走 portal、真实 X11 走 x11grab、虚拟显示被拒绝 |
 | `test_report_images.py` | 涂白改写像素（界内变白、界外不动、越界不崩、JPEG 源输出 PNG）、`redact` 的 `*` 通配与按图合并、本地图内联为 data URI（远程/缺失/未知扩展名不动）、图注编号（起点续号、alt 转义、alt 含 `>` 仍能编号）、`--redact` 参数格式错误退 2 |
 

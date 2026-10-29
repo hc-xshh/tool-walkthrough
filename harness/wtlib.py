@@ -13,9 +13,106 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 OS = platform.system()  # Linux / Darwin / Windows
-WT_VERSION = "1.10.0"
+WT_VERSION = "1.11.0"
 PROFILES_DIR = ROOT / "harness" / "profiles"
 LOCK_FILE = ROOT / "harness" / "harness.lock"
+
+_REAL_SESSION = {}
+
+
+def verify_real_session(disp=":0", refresh=False):
+    """Prove that Linux is on an active, seated desktop session.
+
+    `DISPLAY=:0` alone is only a name; Xvfb/Xephyr can also bind :0. This
+    checks logind's active session, the Wayland socket for a Wayland session,
+    or a real connected X11 output before the harness touches the desktop.
+    Other operating systems are outside this Linux-only gate.
+    """
+    if OS != "Linux":
+        return {"type": OS, "display": disp, "source": "non-linux"}
+    key = (str(disp), os.getuid())
+    if not refresh and key in _REAL_SESSION:
+        return _REAL_SESSION[key]
+    value = str(disp or ":0").strip()
+    if value.split(".")[0] != ":0":
+        raise SystemExit(
+            f"virtual displays are disabled ({value}); use the real desktop DISPLAY=:0"
+        )
+    loginctl = which_any(["loginctl"])
+    if not loginctl:
+        raise SystemExit(
+            "real-desktop check failed: loginctl is missing; "
+            "run inside an active Linux desktop session"
+        )
+    sessions = []
+    sid = os.environ.get("XDG_SESSION_ID")
+    if sid:
+        sessions.append(sid)
+    else:
+        p = subprocess.run(
+            [loginctl, "list-sessions", "--no-legend"],
+            capture_output=True, text=True, timeout=10,
+        )
+        for line in (p.stdout or "").splitlines():
+            cols = line.split()
+            if len(cols) >= 4 and cols[1] == str(os.getuid()) and cols[3] != "-":
+                sessions.append(cols[0])
+    chosen = None
+    for candidate in sessions:
+        q = subprocess.run(
+            [loginctl, "show-session", candidate, "-p", "Type", "-p", "Active", "-p", "Seat"],
+            capture_output=True, text=True, timeout=10,
+        )
+        props = {}
+        for line in (q.stdout or "").splitlines():
+            if "=" in line:
+                k, v = line.split("=", 1)
+                props[k.strip()] = v.strip()
+        if props.get("Active") == "yes" and props.get("Seat") not in (None, "", "-"):
+            chosen = (candidate, props)
+            break
+    if not chosen:
+        raise SystemExit(
+            "real-desktop check failed: no active logind session with a seat; "
+            "use the real desktop, not a headless/container display"
+        )
+    sid, props = chosen
+    stype = (props.get("Type") or "").lower()
+    if stype == "wayland":
+        runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+        wd = os.environ.get("WAYLAND_DISPLAY") or "wayland-0"
+        if not Path(runtime, wd).exists():
+            raise SystemExit(
+                f"real-desktop check failed: Wayland socket {runtime}/{wd} is missing; "
+                "export XDG_RUNTIME_DIR/WAYLAND_DISPLAY from the real session"
+            )
+    elif stype == "x11":
+        xrandr = which_any(["xrandr"])
+        if not xrandr:
+            raise SystemExit("real-desktop check failed: xrandr is missing for X11")
+        p = subprocess.run(
+            [xrandr, "-display", value, "--query"],
+            capture_output=True, text=True, timeout=10,
+            env=dict(os.environ, DISPLAY=value),
+        )
+        outputs = [line.split()[0] for line in (p.stdout or "").splitlines()
+                   if " connected" in line and line.split()]
+        if not outputs or all(name.lower() in ("screen", "default") for name in outputs):
+            raise SystemExit(
+                "real-desktop check failed: no physical X11 output; "
+                "this looks like Xvfb/Xephyr, not the real desktop"
+            )
+    else:
+        raise SystemExit(
+            f"real-desktop check failed: unsupported session type {stype!r}"
+        )
+    result = {
+        "type": stype, "display": value, "session": sid,
+        "seat": props.get("Seat"), "source": "loginctl",
+    }
+    _REAL_SESSION[key] = result
+    return result
+
 
 def which_any(names):
     for n in names:

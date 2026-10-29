@@ -1,5 +1,13 @@
 # Changelog
 
+## v6.14（2026-10-29，Linux 真实桌面校验）
+
+- 新增 `wtlib.verify_real_session()`：检查 loginctl 活跃会话、seat、Wayland socket 或真实 X11 output；拒绝无 seat 的容器和 Xvfb/Xephyr。
+- `wt.py shot/click/launch/preflight/agent` 统一走真实会话校验；`cdp.py` 也强制 `DISPLAY=:0`、活跃会话和可见窗口。
+- `wt.py launch` 拒绝 `--headless`、`--ozone-platform=headless`、`--virtual-time-budget`；删除 `WT_SCREENSHOT=x11` 绕过开关。
+- `shot.sh` / `click.sh` 改为转调 `wt.py`，不再维护第二套 x11grab/xdotool 逻辑；相关文件注明只支持真实桌面。
+- 单元测试 137 条；`verify_all.py --strict` 通过。
+
 ## v6.13（2026-10-29，移除虚拟桌面路径）
 
 - 评测只允许真实桌面：`wt.py shot/click/launch/preflight/agent` 拒绝 `:98`、`:99` 等虚拟显示，`wtshot.capture_screen` 同样硬拒绝。
