@@ -1,6 +1,13 @@
 {
   "id": "L11-report-throughput",
   "level": 11,
+  "category": "performance",
+  "complexity": "advanced",
+  "tags": [
+    "performance",
+    "indexing",
+    "csv"
+  ],
   "title": "性能预算：8000 行报表从二十秒压到 3 秒内",
   "fixture": "fixtures/L11-report-throughput/repo",
   "accept": "accept/L11-report-throughput",

@@ -1,6 +1,13 @@
 {
   "id": "L4b-ledger-ambiguous",
   "level": 4,
+  "category": "domain",
+  "complexity": "intermediate",
+  "tags": [
+    "ledger",
+    "ambiguity",
+    "cli"
+  ],
   "title": "同一仓库，只给症状不给规则",
   "fixture": "fixtures/L4-monthly-ledger/repo",
   "accept": "accept/L4-monthly-ledger",

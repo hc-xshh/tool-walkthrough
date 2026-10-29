@@ -1,6 +1,13 @@
 {
   "id": "L1-split-bill",
   "level": 1,
+  "category": "cli",
+  "complexity": "basic",
+  "tags": [
+    "parsing",
+    "money",
+    "cli"
+  ],
   "title": "单文件修 bug：取整丢分",
   "fixture": "fixtures/L1-split-bill/repo",
   "accept": "accept/L1-split-bill",

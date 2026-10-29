@@ -155,7 +155,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 102 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 107 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
 一条命令跑完整健康检查（单元测试、13 个任务规格、两套自测、Node 语法、Python 编译）：

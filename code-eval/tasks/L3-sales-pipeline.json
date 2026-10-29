@@ -1,6 +1,13 @@
 {
   "id": "L3-sales-pipeline",
   "level": 3,
+  "category": "data",
+  "complexity": "intermediate",
+  "tags": [
+    "csv",
+    "aggregation",
+    "cli"
+  ],
   "title": "跨模块排错：金额换算、退款与执行顺序",
   "fixture": "fixtures/L3-sales-pipeline/repo",
   "accept": "accept/L3-sales-pipeline",

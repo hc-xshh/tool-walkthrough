@@ -1,6 +1,13 @@
 {
   "id": "L6-notes-soft-delete",
   "level": 6,
+  "category": "files",
+  "complexity": "intermediate",
+  "tags": [
+    "migration",
+    "soft-delete",
+    "filesystem"
+  ],
   "title": "多轮变更：先做同步，再改成软删除",
   "fixture": "fixtures/L5-notes-sync/repo",
   "accept": "accept/L6-notes-soft-delete",

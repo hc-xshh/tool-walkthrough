@@ -146,6 +146,36 @@ python code-eval/tools/run_tool.py --driver drive_codex.py ... --review
   ```
   `forbidden` 里的 `tests/`、`data/` 必须在 prompt 里用「不要改 …」写明；否则 agent 没被告知，判 `scope_violation` 会把题面漏写记成产品越界。
 
+## 只跑一个 / 一类任务
+
+`run_tool.py` 不会默认跑全量：要么给 `--tasks`，要么给筛选条件；两者都没有会直接报错。
+任务 JSON 现在带 `category`、`complexity`、`tags` 三个路由字段。
+
+```bash
+# 看全部任务和标签（不需要 driver / run）
+python code-eval/tools/run_tool.py --list
+
+# 只跑一个指定任务
+python code-eval/tools/run_tool.py --driver drive_codex.py \
+    --tasks L10-stock-reserve --reps 1 --run runs/<run>
+
+# 跑一类：所有 service 任务
+python code-eval/tools/run_tool.py --driver drive_codex.py \
+    --category service --reps 1 --run runs/<run>
+
+# 只跑一个最复杂的任务：advanced 里 level 最高的那个（当前是 L12）
+python code-eval/tools/run_tool.py --driver drive_codex.py \
+    --complexity advanced --pick 1 --reps 1 --run runs/<run>
+
+# 显式跑全量
+python code-eval/tools/run_tool.py --driver drive_codex.py \
+    --all --reps 3 --run runs/<run>
+```
+
+筛选维度可以组合：`--category service --complexity advanced`、`--tag concurrency`、
+`--min-level 10 --max-level 12`。`--pick N` 按 level 从高到低取前 N 个；
+要固定顺序就直接用 `--tasks` 列 id。
+
 ## 跑一次
 
 ```bash

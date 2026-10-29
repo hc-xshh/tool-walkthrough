@@ -1,6 +1,13 @@
 {
   "id": "L8-payments-idem",
   "level": 8,
+  "category": "service",
+  "complexity": "advanced",
+  "tags": [
+    "idempotency",
+    "retry",
+    "concurrency"
+  ],
   "title": "存量工程：跨文件修幂等与金额（可多轮）",
   "fixture": "fixtures/L8-payments-idem/repo",
   "accept": "accept/L8-payments-idem",

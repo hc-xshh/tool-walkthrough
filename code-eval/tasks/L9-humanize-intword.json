@@ -1,6 +1,13 @@
 {
   "id": "L9-humanize-intword",
   "level": 9,
+  "category": "library",
+  "complexity": "advanced",
+  "tags": [
+    "real-repo",
+    "i18n",
+    "library"
+  ],
   "title": "真实仓库：humanize 的 intword 进位（上游 PR #346）",
   "fixture": "fixtures/L9-humanize-intword/repo",
   "accept": "accept/L9-humanize-intword",

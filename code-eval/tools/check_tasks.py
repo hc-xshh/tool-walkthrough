@@ -103,10 +103,30 @@ def check_requirements(spec):
     return problems
 
 
+CATEGORIES = {"cli", "data", "domain", "files", "refactor", "service", "library",
+              "performance", "async"}
+COMPLEXITIES = {"basic", "intermediate", "advanced"}
+
+
+def check_routing(spec):
+    """Routing metadata drives `run_tool.py --category/--tag/--complexity`."""
+    task = spec.get("id", "?")
+    problems = []
+    if spec.get("category") not in CATEGORIES:
+        problems.append(f"{task}: category {spec.get('category')!r} is not one of {sorted(CATEGORIES)}")
+    if spec.get("complexity") not in COMPLEXITIES:
+        problems.append(f"{task}: complexity {spec.get('complexity')!r} is not one of {sorted(COMPLEXITIES)}")
+    tags = spec.get("tags")
+    if not isinstance(tags, list) or not tags:
+        problems.append(f"{task}: tags must be a non-empty list")
+    return problems
+
+
 def check_task(spec_path):
     spec = json.loads(spec_path.read_text(encoding="utf-8"))
     task = spec.get("id", "?")
-    problems = check_requirements(spec)
+    problems = check_routing(spec)
+    problems.extend(check_requirements(spec))
     prompt_files = spec.get("prompts") or ([spec["prompt"]] if spec.get("prompt") else [])
     if not prompt_files:
         return problems

@@ -8,10 +8,13 @@
   `/run/user/<uid>/.mutter-Xwaylandauth.*`，PASS 行直接给出要 export 的命令；不再误导用户去启 Xvfb。
 - **新增 `verify_all.py`**：一条命令跑单元测试、13 个任务规格、两套自测、Node 语法、Python 编译；
   支持 `--quick`、`--strict`、`--json`。新增 `.github/workflows/verify.yml` 跑同一套检查。
-- **文档对齐**：任务数 12 → 13（12 档 + L4b 对照），测试数 97 → 102；补 Node 20+ 与
+- **文档对齐**：任务数 12 → 13（12 档 + L4b 对照），测试数 97 → 107；补 Node 20+ 与
   `office-eval/requirements.txt`。
 - **驱动器不再写死旧版本**：TRAE / Cursor / Qoder 用通用名，Codex 自动读 `codex --version`。
 - **记分卡去重**：同一 `(task, rep)` 的重复结果只保留最新文件，不再把一次尝试算两次。
+- **任务路由**：13 个任务 JSON 增加 `category` / `complexity` / `tags`；`run_tool.py` 支持
+  `--list`、`--category`、`--tag`、`--complexity`、`--min-level`/`--max-level`、`--pick`。
+  不写选择器不会再默认跑全量；`--all` 才是全量。测试 107 条。
 - 新增 [`AUDIT.md`](AUDIT.md)：这轮体检的范围、证据、已修项和未验证边界。
 
 ## v6.7（2026-10-29，验收退出码、并行清理、token 记分）

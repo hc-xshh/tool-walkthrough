@@ -1,6 +1,13 @@
 {
   "id": "L7-billing-export",
   "level": 7,
+  "category": "refactor",
+  "complexity": "advanced",
+  "tags": [
+    "multi-file",
+    "compatibility",
+    "cli"
+  ],
   "title": "大仓库：128 个文件里定位导出器",
   "fixture": "fixtures/L7-billing-export/repo",
   "accept": "accept/L7-billing-export",

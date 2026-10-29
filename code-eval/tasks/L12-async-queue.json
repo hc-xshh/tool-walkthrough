@@ -1,6 +1,14 @@
 {
   "id": "L12-async-queue",
   "level": 12,
+  "category": "async",
+  "complexity": "advanced",
+  "tags": [
+    "node",
+    "async",
+    "retry",
+    "concurrency"
+  ],
   "title": "Node.js 异步队列：并发上限、顺序、重试",
   "fixture": "fixtures/L12-async-queue/repo",
   "accept": "accept/L12-async-queue",

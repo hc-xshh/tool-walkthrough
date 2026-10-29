@@ -1,6 +1,13 @@
 {
   "id": "L10-stock-reserve",
   "level": 10,
+  "category": "service",
+  "complexity": "advanced",
+  "tags": [
+    "concurrency",
+    "http",
+    "persistence"
+  ],
   "title": "HTTP 服务：并发预占、幂等与重启持久化",
   "fixture": "fixtures/L10-stock-reserve/repo",
   "accept": "accept/L10-stock-reserve",

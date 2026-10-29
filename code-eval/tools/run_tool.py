@@ -20,10 +20,25 @@ EVAL = HERE.parent
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--driver", required=True, help="drive_*.py 文件名或路径")
-    ap.add_argument("--tasks", required=True)
+    ap.add_argument("--driver", default=None, help="drive_*.py 文件名或路径")
+    ap.add_argument("--tasks", default=None,
+                    help="逗号分隔的任务 id；与下面的筛选条件二选一")
+    ap.add_argument("--category", default=None,
+                    help="按 category 选，逗号分隔（cli/data/domain/files/refactor/service/library/performance/async）")
+    ap.add_argument("--tag", default=None,
+                    help="按 tag 选，逗号分隔（如 concurrency,http）")
+    ap.add_argument("--complexity", default=None,
+                    help="basic / intermediate / advanced，逗号分隔")
+    ap.add_argument("--min-level", type=int, default=None)
+    ap.add_argument("--max-level", type=int, default=None)
+    ap.add_argument("--pick", type=int, default=None,
+                    help="筛选后按 level 从高到低只取前 N 个；用于只跑一个复杂任务")
+    ap.add_argument("--all", action="store_true", help="显式跑全部任务（不写就是必须选）")
+    ap.add_argument("--list", dest="list_tasks", action="store_true",
+                    help="只列出匹配任务，不启动 driver")
     ap.add_argument("--reps", type=int, default=3)
-    ap.add_argument("--run", required=True)
+    ap.add_argument("--run", default=None,
+                    help="run 目录；--list 时可省略")
     ap.add_argument("--preflight", default=None,
                     help="preflight.json from preflight.py; blocked => do not run")
     ap.add_argument("--force", action="store_true")
@@ -46,10 +61,71 @@ def main():
                       "a blocked run is 'not tested', not 'failed'")
                 raise SystemExit(2)
 
+    run_dir = None
+    all_specs = {}
+    for path in sorted((EVAL / "tasks").glob("*.json")):
+        spec = json.loads(path.read_text(encoding="utf-8"))
+        all_specs[spec["id"]] = spec
+
+    def csv(value):
+        return {x.strip() for x in (value or "").split(",") if x.strip()}
+
+    if a.tasks:
+        tasks = [t.strip() for t in a.tasks.split(",") if t.strip()]
+        unknown = [t for t in tasks if t not in all_specs]
+        if unknown:
+            raise SystemExit(f"unknown task(s): {', '.join(unknown)}; use --list to see ids")
+    else:
+        filters = (a.category, a.tag, a.complexity, a.min_level, a.max_level)
+        if not any(x is not None for x in filters) and not a.all and not a.list_tasks:
+            raise SystemExit(
+                "choose tasks explicitly: --tasks <id> or --category/--tag/--complexity/"
+                "--min-level/--max-level, or --all. Use --list to inspect."
+            )
+        tasks = []
+        for tid, spec in all_specs.items():
+            if a.category and spec.get("category") not in csv(a.category):
+                continue
+            if a.tag and not (set(spec.get("tags") or []) & csv(a.tag)):
+                continue
+            if a.complexity and spec.get("complexity") not in csv(a.complexity):
+                continue
+            level = spec.get("level", 0)
+            if a.min_level is not None and level < a.min_level:
+                continue
+            if a.max_level is not None and level > a.max_level:
+                continue
+            tasks.append(tid)
+
+    if not a.tasks:
+        tasks.sort(key=lambda t: (all_specs[t].get("level", 0), t))
+    if a.pick is not None:
+        if a.pick < 1:
+            raise SystemExit("--pick must be >= 1")
+        # "只跑一个复杂的" -> take the highest levels in the filtered set.
+        tasks = sorted(tasks, key=lambda t: (-all_specs[t].get("level", 0), t))[:a.pick]
+
+    if not tasks:
+        raise SystemExit("no task matched the filters")
+
+    print(f"selected {len(tasks)}/{len(all_specs)}: " + ", ".join(
+        f"{t} (L{all_specs[t].get('level')}, {all_specs[t].get('category')}/"
+        f"{all_specs[t].get('complexity')})" for t in tasks), flush=True)
+    if a.list_tasks:
+        for t in tasks:
+            spec = all_specs[t]
+            print(f"{t:<24} L{spec.get('level'):<2} {spec.get('category'):<12} "
+                  f"{spec.get('complexity'):<12} {','.join(spec.get('tags') or [])}  {spec.get('title','')}")
+        return 0
+
+    if not a.run:
+        ap.error("--run is required unless --list")
+    if not a.driver:
+        ap.error("--driver is required unless --list")
     run_dir = Path(a.run).resolve()
     (run_dir / "results").mkdir(parents=True, exist_ok=True)
     (run_dir / "logs").mkdir(parents=True, exist_ok=True)
-    tasks = [t.strip() for t in a.tasks.split(",") if t.strip()]
+
     driver = Path(a.driver)
     if not driver.is_absolute():
         cand = HERE / a.driver
