@@ -228,7 +228,7 @@ python code-eval/tools/regrade.py --run runs/<run>
 整套自测（不需要被测工具）：
 
 ```bash
-python code-eval/tools/selftest.py     # 45 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
+python code-eval/tools/selftest.py     # 51 个假 agent 用例，覆盖正确/偷懒/越界/只修一半
 ```
 
 ## 任务清单
@@ -248,6 +248,8 @@ python code-eval/tools/selftest.py     # 45 个假 agent 用例，覆盖正确/�
 | `L10-stock-reserve` | L10 | HTTP 服务：并发预占、幂等、重启持久化、入参校验 | 先读后写不超卖、重试重复扣、重启后预占丢失 |
 | `L11-report-throughput` | L11 | 性能预算：8000 行报表 3 秒内，输出逐字段不变 | 全量重算 O(n²)、只优化小数据路径 |
 | `L12-async-queue` | L12 | Node.js 异步队列：并发上限、结果顺序、重试预算 | 一次全发、按完成顺序 push、所有错误都重试 |
+| `P1-orders-multimodule` | P1 | 现有仓库纵向改造：取消订单同时改订单、库存、日报、审计，并迁移旧库 | 只做接口、不释放库存、重复写审计、迁移丢单 |
+| `P2-expense-tracker` | P2 | 从零实现记账 Web 应用：API、SQLite、CSV、静态前端 | 只做后端、只做前端、漏校验、重启丢数据 |
 
 多轮任务在 spec 里用 `prompts` 数组代替 `prompt`，驱动器在**同一个会话**里依次发送（不新建任务），
 最后统一判分；每轮单独等 idle，上一轮的「任务耗时」不能当完成信号。

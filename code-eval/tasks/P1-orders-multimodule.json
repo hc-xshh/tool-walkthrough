@@ -1,0 +1,85 @@
+{
+  "id": "P1-orders-multimodule",
+  "level": 13,
+  "category": "service",
+  "complexity": "advanced",
+  "tags": [
+    "multimodule",
+    "sqlite",
+    "migration",
+    "backward-compat",
+    "concurrency"
+  ],
+  "title": "现有仓库纵向改造：取消订单跨库存、日报和审计",
+  "fixture": "fixtures/P1-orders-multimodule/repo",
+  "accept": "accept/P1-orders-multimodule",
+  "prompt": "tasks/P1-orders-multimodule.prompt.txt",
+  "allowed": [
+    "**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
+  "visible": {
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
+    "timeout": 180
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "取消已支付订单：状态、cancelled_at、库存预占都正确",
+      "tests": [
+        "test_cancel_paid_order_updates_status_and_inventory",
+        "test_other_order_inventory_untouched"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "重复/并发取消幂等：库存只释放一次，状态保持 cancelled",
+      "tests": [
+        "test_cancel_is_idempotent_and_audits_once",
+        "test_concurrent_cancel_releases_once"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "未知订单 404，已发货等不可取消状态 409",
+      "tests": [
+        "test_cancel_unknown_is_404",
+        "test_cancel_shipped_is_409"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "审计事件只写一次，并可通过 /audit 查询",
+      "tests": [
+        "test_audit_endpoint_returns_event_after_cancel"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "日报排除取消订单，保留原字段并新增 cancelled_orders",
+      "tests": [
+        "test_daily_report_excludes_cancelled"
+      ]
+    },
+    {
+      "id": "R6",
+      "text": "旧数据库自动迁移，原有订单契约不丢字段",
+      "tests": [
+        "test_order_contract_preserved",
+        "test_legacy_database_migrates_without_data_loss"
+      ]
+    }
+  ],
+  "timebox_s": 7200
+}

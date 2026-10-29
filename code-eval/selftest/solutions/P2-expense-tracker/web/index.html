@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>我的记账本</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main class="app">
+    <header>
+      <h1>我的记账本</h1>
+      <p>记下每一笔支出，月底看清钱花在哪里。</p>
+    </header>
+
+    <section class="panel">
+      <h2>记一笔</h2>
+      <form id="expense-form">
+        <label>金额（元）<input name="amount" type="number" min="0.01" step="0.01" required></label>
+        <label>分类
+          <select name="category" required>
+            <option value="餐饮">餐饮</option>
+            <option value="交通">交通</option>
+            <option value="购物">购物</option>
+            <option value="住房">住房</option>
+            <option value="其他">其他</option>
+          </select>
+        </label>
+        <label>日期<input name="spent_on" type="date" required></label>
+        <label>备注<input name="note" type="text" placeholder="可选"></label>
+        <button type="submit">保存</button>
+      </form>
+      <div id="form-error" class="error" role="alert"></div>
+    </section>
+
+    <section class="panel">
+      <div class="row">
+        <h2>最近支出</h2>
+        <label>月份<input id="month" type="month"></label>
+      </div>
+      <div id="summary" class="summary"></div>
+      <div id="expense-list" class="list"></div>
+      <a id="export-link" href="/export.csv">导出 CSV</a>
+    </section>
+  </main>
+  <script src="/app.js"></script>
+</body>
+</html>

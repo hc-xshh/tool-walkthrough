@@ -21,22 +21,23 @@ class SelectionTest(unittest.TestCase):
     def test_list_all_without_driver_or_run(self):
         res = run("--list")
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("selected 13/13", res.stdout)
+        self.assertIn("selected 15/15", res.stdout)
         self.assertIn("L12-async-queue", res.stdout)
 
     def test_filter_by_category(self):
         res = run("--category", "service", "--list")
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("selected 2/13", res.stdout)
+        self.assertIn("selected 3/15", res.stdout)
         self.assertIn("L8-payments-idem", res.stdout)
         self.assertIn("L10-stock-reserve", res.stdout)
+        self.assertIn("P1-orders-multimodule", res.stdout)
         self.assertNotIn("L1-split-bill", res.stdout)
 
     def test_pick_takes_highest_level(self):
         res = run("--complexity", "advanced", "--pick", "1", "--list")
         self.assertEqual(res.returncode, 0, res.stderr)
-        self.assertIn("selected 1/13", res.stdout)
-        self.assertIn("L12-async-queue", res.stdout)
+        self.assertIn("selected 1/15", res.stdout)
+        self.assertIn("P2-expense-tracker", res.stdout)
         self.assertNotIn("L7-billing-export", res.stdout)
 
     def test_unknown_task_fails(self):

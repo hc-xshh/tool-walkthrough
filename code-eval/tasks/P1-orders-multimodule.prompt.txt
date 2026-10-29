@@ -1,0 +1,41 @@
+项目路径：{workdir}
+
+这是一个已经上线的订单服务，代码分成三块：
+
+- `app.py`：HTTP 入口；
+- `store.py`：SQLite 存取，订单和库存都在这里；
+- `reports.py`：日报。
+
+现在要补上「取消订单」这条完整链路。它不是单独加一个接口：取消会同时影响订单状态、库存预占、日报和审计，而且旧数据库里已经有数据，不能丢单。
+
+请实现：
+
+1. `POST /orders/<id>/cancel`
+   - 已支付（`paid`）订单取消成功，返回 200，订单状态变成 `cancelled`，并带 `cancelled_at`；
+   - 重复取消同一订单仍然返回 200，状态保持 `cancelled`，不能再次释放库存或重复写审计；
+   - 不存在的订单返回 404；
+   - 已发货（`shipped`）等不可取消状态返回 409。
+
+2. 取消时按订单明细释放库存预占：
+   - 每个 SKU 的 `reserved` 减去对应数量，不能减成负数；
+   - 同一订单被并发取消多次，库存只能释放一次。
+
+3. 每次真正取消写入一条审计事件：
+   - `GET /audit?order_id=<id>` 返回 `{"events": [...]}`；
+   - 幂等重放不能新增第二条事件。
+
+4. 日报兼容旧字段并排除取消订单：
+   - `GET /reports/daily?date=YYYY-MM-DD` 继续返回 `date`、`revenue_cents`、`orders`；
+   - `orders` 和 `revenue_cents` 不计已取消订单；
+   - 新增 `cancelled_orders` 表示当天取消数量。
+
+5. 旧数据库要能直接启动：
+   - `data/shop.db` 是旧结构，没有 `cancelled_at` 列；
+   - 服务启动时自动迁移，不丢已有订单和库存；
+   - `GET /orders/<id>` 保留原有字段，新字段可以增加。
+
+约束：
+
+- 不要改 `tests/` 和 `data/`；现有可见测试必须继续通过；
+- 只使用 Python 标准库，不引入第三方依赖；
+- 改完跑 `python -m unittest discover -s tests -v`，并说明改了哪几个文件、每处为什么必须一起改。

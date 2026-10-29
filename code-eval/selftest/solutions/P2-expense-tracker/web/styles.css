@@ -1,0 +1,29 @@
+:root { color-scheme: light; font-family: system-ui, -apple-system, "Noto Sans SC", sans-serif; }
+* { box-sizing: border-box; }
+body { margin: 0; background: #f5f3ee; color: #25231f; }
+.app { max-width: 780px; margin: 0 auto; padding: 32px 20px 64px; }
+header h1 { margin: 0 0 4px; font-size: 30px; }
+header p { margin: 0 0 24px; color: #777168; }
+.panel { background: #fffdf8; border: 1px solid #e5dfd3; border-radius: 12px; padding: 20px; margin-bottom: 16px; }
+h2 { font-size: 17px; margin: 0 0 12px; }
+form { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+label { display: grid; gap: 5px; color: #665f55; font-size: 13px; }
+input, select, button { font: inherit; padding: 9px 10px; border: 1px solid #d8d0c2; border-radius: 7px; background: #fff; }
+button { background: #2f6f5e; color: #fff; border: 0; cursor: pointer; }
+form button { grid-column: 1 / -1; }
+.error { color: #a23b32; min-height: 18px; margin-top: 8px; font-size: 13px; }
+.row { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.row label { display: flex; align-items: center; gap: 6px; }
+.summary { background: #f0f7f3; border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.summary .total { font-size: 15px; }
+.summary .total strong { font-size: 22px; color: #2f6f5e; }
+.summary ul { list-style: none; padding: 0; margin: 8px 0 0; display: grid; gap: 6px; }
+.summary li { display: flex; justify-content: space-between; gap: 10px; font-size: 13px; }
+.summary li em { color: #8a8277; font-style: normal; }
+.item { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid #eee7dc; }
+.item div { display: grid; gap: 3px; }
+.item span { color: #8a8277; font-size: 12px; }
+.item button { background: transparent; color: #a23b32; padding: 4px 6px; }
+.empty { color: #8a8277; }
+#export-link { display: inline-block; margin-top: 12px; color: #2f6f5e; font-size: 13px; }
+@media (max-width: 560px) { form { grid-template-columns: 1fr; } }

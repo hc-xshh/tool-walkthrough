@@ -7,13 +7,13 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 **可以用，但边界要写清。** 三条主线的入口都能跑通，健康检查一条命令通过；
 还没有做到的是跨平台真机、真实办公 agent 和「通过率饱和」后的区分度。
 
-- **可用**：`wt.py` 的 12 个子命令、`code-eval` 的 13 个任务、`office-eval` 的 1 个任务都有可执行入口；
+- **可用**：`wt.py` 的 12 个子命令、`code-eval` 的 15 个任务、`office-eval` 的 1 个任务都有可执行入口；
   之前 `preflight` 在 agent shell 里会误报 `display :0` 失败，已修。
-- **可靠**：107 条单元测试、45 条 code-eval 自测、5 条 office 自测、13 个任务规格检查全过；
+- **可靠**：107 条单元测试、51 条 code-eval 自测、5 条 office 自测、15 个任务规格检查全过；
   `verify_all.py` 一条命令可复跑；GitHub Actions 上的 `verify` 已实跑通过（1m12s）。
 - **可解释**：判分结果有 verdict / score / requirements / deliverable / claims / quality / usage；
   记分卡带 token 成本；报告有固定六节和边界。文档里的任务数、测试数已和实际对齐。
-- **可选任务**：13 个任务都有 `category` / `complexity` / `tags`；`run_tool.py --list` 可看清单，
+- **可选任务**：15 个任务都有 `category` / `complexity` / `tags`；`run_tool.py --list` 可看清单，
   `--tasks` 跑一个、`--category/--tag/--complexity` 跑一类、`--pick 1` 取最高难度一个；不写选择器不会跑全量。
 
 ## 这次实际跑过的
@@ -22,14 +22,14 @@ _体检日期：2026-10-29。只写这次实际跑过的结果；没跑过的在
 |---|---|---|
 | `wt.py preflight` | PASS | Python / git / tesseract / Chrome / CDP / ffmpeg / xdotool / display :0 全 PASS |
 | 单元测试 | 107 passed | `python3 -m unittest discover -s tests -q` |
-| code-eval 任务规格 | 0 warnings / 13 tasks | `check_tasks.py --strict` |
-| code-eval 判分自测 | 45/45 | `code-eval/tools/selftest.py` |
+| code-eval 任务规格 | 0 warnings / 15 tasks | `check_tasks.py --strict` |
+| code-eval 判分自测 | 51/51 | `code-eval/tools/selftest.py` |
 | office-eval 判分自测 | 5/5 | `office-eval/tools/selftest.py` |
 | 全量健康检查 | 7 PASS / 0 FAIL / 0 SKIP | `python3 verify_all.py --strict` |
 | `report_share.py` | HTML / PDF / 钉钉 MD 三件生成 | 测试报告 + 1 张图，PDF 31KB |
 | `webapp_accept.mjs` 失败退出码 | 1 | 空项目跑出 4/20，进程退出 1 |
 | Node 语法 | 通过 | `node --check harness/webapp_accept.mjs` + `node --check code-eval/dashboard/app.js` |
-| 可视化控制台 | 构建/控制模式通过 | `build_dashboard.py` + `serve_dashboard.py`：13 tasks / 2 runs / 13 results；API 健康、白名单校验、假 driver 启动生命周期；浏览器巡检总览、任务、结果、对比、新建运行 |
+| 可视化控制台 | 构建/控制模式通过 | `build_dashboard.py` + `serve_dashboard.py`：15 tasks / 2 runs / 13 results；API 健康、白名单校验、假 driver 启动生命周期；浏览器巡检总览、任务、结果、对比、新建运行 |
 | GitHub Actions | success | run 40806584416，1m12s |
 | Codex L10–L12 | 9/9 pass | 见 `code-eval/reports/2026-10-29-codex-l10-l12.md` |
 

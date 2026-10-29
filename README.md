@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.9**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
+当前方法版本：**v6.10**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -19,7 +19,7 @@
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
 | `verify_all.py` | 一条命令跑完整健康检查：单元测试、任务规格、两个自测、Node 语法、Python 编译 |
-| `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 = 13 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
+| `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 
@@ -28,7 +28,7 @@
 - **不含 `runs/` 案例库**：报告、截图、日志、产物都不在本包内。方法可以独立使用；需要样本时按本包流程自己跑一轮。
 - `runs/` 默认写在 `.gitignore` 里：证据常含账号、桌面和登录态，是否入库由你决定。
 - **不含任何被测产品的账号、登录态、截图或原始日志**。
-- 不含 AI 编程工具的**完整**能力评测方法：`code-eval/` 有 13 个任务（12 档 + L4b 对照，含一个真实开源仓库和一个 Node.js 并发任务）和一套判分骨架，回答的是「这几个任务过不过」，不是「编程能力打几分」；办公侧只有 xlsx 一个任务，还没在真实办公 agent 上跑过。
+- 不含 AI 编程工具的**完整**能力评测方法：`code-eval/` 有 15 个任务（12 档 + L4b 对照 + 多模块改造/从零全栈各 1 个，含一个真实开源仓库和一个 Node.js 并发任务）和一套判分骨架，回答的是「这几个任务过不过」，不是「编程能力打几分」；办公侧只有 xlsx 一个任务，还没在真实办公 agent 上跑过。
 
 ## 依赖
 
@@ -158,7 +158,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 python3 -m unittest discover -s tests -v     # 107 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
 ```
 
-一条命令跑完整健康检查（单元测试、13 个任务规格、两套自测、Node 语法、Python 编译）：
+一条命令跑完整健康检查（单元测试、15 个任务规格、两套自测、Node 语法、Python 编译）：
 
 ```bash
 python3 verify_all.py            # 约 1 分钟

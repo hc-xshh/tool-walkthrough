@@ -104,7 +104,7 @@ def check_requirements(spec):
 
 
 CATEGORIES = {"cli", "data", "domain", "files", "refactor", "service", "library",
-              "performance", "async"}
+              "performance", "async", "web"}
 COMPLEXITIES = {"basic", "intermediate", "advanced"}
 
 

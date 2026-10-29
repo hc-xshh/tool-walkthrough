@@ -24,7 +24,7 @@ def main():
     ap.add_argument("--tasks", default=None,
                     help="逗号分隔的任务 id；与下面的筛选条件二选一")
     ap.add_argument("--category", default=None,
-                    help="按 category 选，逗号分隔（cli/data/domain/files/refactor/service/library/performance/async）")
+                    help="按 category 选，逗号分隔（cli/data/domain/files/refactor/service/library/performance/async/web）")
     ap.add_argument("--tag", default=None,
                     help="按 tag 选，逗号分隔（如 concurrency,http）")
     ap.add_argument("--complexity", default=None,

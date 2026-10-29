@@ -407,6 +407,64 @@ CASES = [
         "expect": "failed",
         "files": {"src/queue.js": ("file", "selftest/variants/L12-retry-all-queue.js")},
     },
+    {
+        "task": "P1-orders-multimodule",
+        "name": "正确实现（事务+审计+迁移）",
+        "expect": "pass",
+        "score": 1.0,
+        "files": {
+            "app.py": ("solution", "P1-orders-multimodule/app.py"),
+            "store.py": ("solution", "P1-orders-multimodule/store.py"),
+            "reports.py": ("solution", "P1-orders-multimodule/reports.py"),
+        },
+    },
+    {
+        "task": "P1-orders-multimodule",
+        "name": "原样不动",
+        "expect": "visible_tests_failed",
+        "files": {},
+    },
+    {
+        "task": "P1-orders-multimodule",
+        "name": "取消成功但漏了审计",
+        "expect": "failed",
+        "files": {
+            "app.py": ("solution", "P1-orders-multimodule/app.py"),
+            "store.py": ("file", "selftest/variants/P1-no-audit-store.py"),
+            "reports.py": ("solution", "P1-orders-multimodule/reports.py"),
+        },
+    },
+    {
+        "task": "P2-expense-tracker",
+        "name": "正确从零实现（API+前端+持久化）",
+        "expect": "pass",
+        "score": 1.0,
+        "files": {
+            "app.py": ("solution", "P2-expense-tracker/app.py"),
+            "store.py": ("solution", "P2-expense-tracker/store.py"),
+            "web/index.html": ("solution", "P2-expense-tracker/web/index.html"),
+            "web/app.js": ("solution", "P2-expense-tracker/web/app.js"),
+            "web/styles.css": ("solution", "P2-expense-tracker/web/styles.css"),
+        },
+    },
+    {
+        "task": "P2-expense-tracker",
+        "name": "原样不动",
+        "expect": "visible_tests_failed",
+        "files": {},
+    },
+    {
+        "task": "P2-expense-tracker",
+        "name": "做了 CRUD 和前端，但漏了月份筛选",
+        "expect": "failed",
+        "files": {
+            "app.py": ("solution", "P2-expense-tracker/app.py"),
+            "store.py": ("file", "selftest/variants/P2-no-month-filter-store.py"),
+            "web/index.html": ("solution", "P2-expense-tracker/web/index.html"),
+            "web/app.js": ("solution", "P2-expense-tracker/web/app.js"),
+            "web/styles.css": ("solution", "P2-expense-tracker/web/styles.css"),
+        },
+    },
 ]
 
 

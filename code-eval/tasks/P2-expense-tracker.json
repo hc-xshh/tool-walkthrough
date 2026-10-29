@@ -1,0 +1,88 @@
+{
+  "id": "P2-expense-tracker",
+  "level": 14,
+  "category": "web",
+  "complexity": "advanced",
+  "tags": [
+    "greenfield",
+    "web",
+    "sqlite",
+    "frontend",
+    "full-stack"
+  ],
+  "title": "从零实现：本地记账 Web 应用",
+  "fixture": "fixtures/P2-expense-tracker/repo",
+  "accept": "accept/P2-expense-tracker",
+  "prompt": "tasks/P2-expense-tracker.prompt.txt",
+  "allowed": [
+    "**"
+  ],
+  "forbidden": [
+    "tests/**",
+    "data/**"
+  ],
+  "visible": {
+    "cmd": [
+      "{python}",
+      "-m",
+      "unittest",
+      "discover",
+      "-s",
+      "tests",
+      "-v"
+    ],
+    "timeout": 180
+  },
+  "requirements": [
+    {
+      "id": "R1",
+      "text": "从零实现记账 CRUD，数据持久化且重启后仍在",
+      "tests": [
+        "test_create_and_list_expense",
+        "test_delete_and_404",
+        "test_restart_persistence"
+      ]
+    },
+    {
+      "id": "R2",
+      "text": "金额、分类、日期校验，非法入参返回 400",
+      "tests": [
+        "test_amount_validation",
+        "test_date_and_category_validation"
+      ]
+    },
+    {
+      "id": "R3",
+      "text": "按月份筛选，汇总总额和分类小计正确且有序",
+      "tests": [
+        "test_month_filter",
+        "test_summary_totals",
+        "test_summary_by_category_order"
+      ]
+    },
+    {
+      "id": "R4",
+      "text": "导出带表头和月份筛选的 CSV",
+      "tests": [
+        "test_csv_export"
+      ]
+    },
+    {
+      "id": "R5",
+      "text": "静态前端壳、表单字段和 API 接线齐全",
+      "tests": [
+        "test_static_frontend_shell"
+      ]
+    },
+    {
+      "id": "R6",
+      "text": "健康检查、未知路由 404、note 默认值",
+      "tests": [
+        "test_health",
+        "test_unknown_route_404",
+        "test_note_defaults_to_empty"
+      ]
+    }
+  ],
+  "timebox_s": 7200
+}

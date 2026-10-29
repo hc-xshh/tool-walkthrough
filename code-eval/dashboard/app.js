@@ -62,7 +62,7 @@
   const CATEGORY_LABEL = {
     cli: "命令行", data: "数据处理", domain: "业务规则", files: "文件与同步",
     refactor: "代码重构", service: "服务接口", library: "第三方库",
-    performance: "性能优化", async: "异步并发",
+    performance: "性能优化", async: "异步并发", web: "Web 全栈",
   };
   const COMPLEXITY_LABEL = { basic: "基础", intermediate: "进阶", advanced: "高级" };
   const TAG_LABEL = {
@@ -73,6 +73,8 @@
     idempotency: "幂等", retry: "重试", concurrency: "并发", "real-repo": "真实仓库",
     i18n: "国际化", library: "库", http: "HTTP", persistence: "持久化",
     performance: "性能", indexing: "索引", node: "Node.js", async: "异步",
+    multimodule: "多模块", sqlite: "SQLite", migration: "迁移", "backward-compat": "向后兼容",
+    greenfield: "从零开发", web: "Web", frontend: "前端", "full-stack": "全栈",
   };
   const VERDICT_LABEL = {
     pass: "通过", failed: "未通过", visible_tests_failed: "可见测试未通过",

@@ -1,0 +1,38 @@
+项目路径：{workdir}
+
+从零实现一个可以在本地使用的「记账」Web 应用。项目里目前只有 `README.md`、空的 `web/` 和 `data/` 目录，以及 `tests/test_contract.py`；没有应用代码。
+
+请实现：
+
+1. 启动入口固定为：
+   ```bash
+   python app.py --port 8787 --data data
+   ```
+   启动后 HTTP 服务同时提供 JSON API 和 `web/` 下的静态前端。
+
+2. 记账 API：
+   - `POST /expenses`，body `{"amount_cents": 1200, "category": "餐饮", "spent_on": "2026-10-01", "note": "午饭"}`；
+     成功返回 201 和完整记录；
+   - `GET /expenses` 返回 `{"expenses": [...]}`，支持 `?month=YYYY-MM`；
+   - `DELETE /expenses/<id>` 成功返回 204，找不到返回 404；
+   - 金额必须是正整数分，0、负数、字符串、布尔值都返回 400；
+   - 分类不能为空；日期必须是 `YYYY-MM-DD` 且真实存在；`note` 可省略，默认空字符串；
+   - 数据要持久化，重启服务后记录还在。
+
+3. 汇总与导出：
+   - `GET /summary?month=YYYY-MM` 返回 `month`、`total_cents`、`by_category`；
+     `by_category` 每项包含 `category`、`total_cents`、`count`，按金额从高到低；
+   - `GET /export.csv?month=YYYY-MM` 返回 CSV，表头为 `id,spent_on,category,amount_cents,note`。
+
+4. 前端：
+   - `web/index.html` 至少包含 `id="expense-form"`，以及 `name="amount"`、`name="category"`、`name="spent_on"` 三个输入；
+   - 页面有 `id="expense-list"` 展示记录，有汇总区域；
+   - `web/app.js` 调用 `/expenses`、`/summary`、`/export.csv`，支持新增、删除和按月份筛选；
+   - `web/styles.css` 提供基本布局，页面在窄屏也能用。
+
+约束：
+
+- 不要改 `tests/` 和 `data/`；`tests/test_contract.py` 是可见验收，保持原样；
+- 只用 Python 标准库和原生 HTML/CSS/JS，不引入第三方依赖；
+- 不要只写接口不写前端，也不要只写前端不接后端；
+- 改完跑 `python -m unittest discover -s tests -v`，并说明你怎么验证重启后数据仍在。
