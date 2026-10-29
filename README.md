@@ -111,7 +111,7 @@ python3 harness/wt.py --run runs/2026-10-29-<tool> agent \
 ```
 
 - `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
-- `--backend desktop --display :0`：Linux/X11 原生桌面，截图 + xdotool；`--ocr` 才加 tesseract 文本
+- `--backend desktop`：Linux/X11 原生桌面，截图 + xdotool；默认用 profile 的 display（`linux-desktop` 是 `:0`，`--profile linux-x11` 是 `:98`），也可用 `--display` 覆盖；`--ocr` 才加 tesseract 文本
 - `--dry-run`：只观察和计划，不点击；`--max-steps` / `--max-total-tokens` 控成本
 - 产物：`shots/agent-step-*.png`、`events.jsonl`、`findings.json`、`agent-summary.md`
 - key 只从环境变量读取，不接受命令行参数；不要写进仓库或报告。不要把明文 key 留在 shell 历史里，可用 `read -rs WT_LLM_API_KEY && export WT_LLM_API_KEY` 或密钥管理器

@@ -643,6 +643,10 @@ def cmd_agent(a):
         cfg = LLMConfig.from_env()
         if getattr(a, "model", None):
             cfg = replace(cfg, model=a.model)
+        # Keep the selected profile's display; without this, `--profile
+        # linux-x11` would silently fall back to the real :0 desktop.
+        if a.backend == "desktop" and not a.display:
+            a.display = profile(a).get("display")
         backend = make_backend(
             a.backend,
             port=a.port,
