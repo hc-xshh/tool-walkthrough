@@ -2,6 +2,15 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.11（2026-10-29，LLM 自带走查 operator）
+
+- 新增 `wt.py agent`：给 harness 配一个 OpenAI-compatible 视觉模型，自己观察截图、点击、输入、记录发现；不再依赖 TRAE/Codex 等外部 Agent。
+- 新增 `llm_client.py`：只用标准库，支持 text + image_url、429/5xx 重试、key 脱敏；key 只从 `WT_LLM_API_KEY` 读取。
+- 新增 `llm_operator.py`：CDP 后端（Chromium/Electron）和 Linux/X11 桌面后端；每步保存截图，产出 `findings.json`、`agent-summary.md`。
+- 安全边界：不输入密码/验证码/支付信息；登录墙、验证码返回 `blocked`；重复动作 3 次停止；步数/token/时间上限。
+- 单元测试 126 条；新增 `tests/test_llm_client.py` 与 `tests/test_llm_operator.py`。
+- 第一版只承诺 Linux 桌面输入；macOS/Windows 的 CDP 可用，原生输入未实测。
+
 ## v6.10（2026-10-29，新增两类完整项目任务）
 
 - **`P1-orders-multimodule`（L13，2 小时）**：现有订单服务的纵向改造。取消订单要同时改订单状态、库存预占、日报和审计，并迁移没有 `cancelled_at` 的旧 SQLite 库；隐藏验收 10 条，覆盖并发幂等、旧库迁移和原契约。

@@ -10,7 +10,7 @@ import support
 
 WT = support.ROOT / "harness" / "wt.py"
 SUBCOMMANDS = ["preflight", "profiles", "new-run", "shot", "click", "ocr",
-               "launch", "report", "audit", "coverage"]
+               "launch", "agent", "report", "audit", "coverage"]
 
 
 def run(*args, cwd=None):
@@ -92,6 +92,18 @@ class CliTest(unittest.TestCase):
         )
         self.assertEqual(res.returncode, 2, res.stdout)
         self.assertIn("native click disabled", res.stderr)
+
+    def test_agent_requires_a_key_before_starting_a_run(self):
+        env = dict(os.environ)
+        env.pop("WT_LLM_API_KEY", None)
+        res = subprocess.run(
+            [sys.executable, str(WT), "agent", "--goal", "test", "--backend", "cdp"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+            cwd=str(support.ROOT), env=env,
+        )
+        self.assertEqual(res.returncode, 1)
+        self.assertIn("WT_LLM_API_KEY", res.stderr)
+        self.assertNotIn("Traceback", res.stderr)
 
     def test_preflight_shows_the_input_mode(self):
         env = dict(os.environ, WALKTHROUGH_NO_NATIVE_INPUT="1")

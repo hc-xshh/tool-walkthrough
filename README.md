@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.10**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
+当前方法版本：**v6.11**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -17,7 +17,7 @@
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 覆盖控件 / 结果 / 证据） |
 | `templates/task-trace.md` | 实景任务执行 trace 模板（项目 / prompt / 思考与工具调用 / 独立验证） |
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
-| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
+| `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`llm_operator.py` 让自带 LLM key 的 operator 自己观察/操作被测产品；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
 | `verify_all.py` | 一条命令跑完整健康检查：单元测试、任务规格、两个自测、Node 语法、Python 编译 |
 | `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
@@ -94,6 +94,31 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 ```
 
 > macOS / Windows 分支已经实现，但尚未在真机实测；第一次用先跑 `python3 harness/wt.py preflight`，按输出补依赖和权限。
+
+## LLM 自带走查（可选）
+
+给 harness 配一个 OpenAI-compatible 视觉模型，就可以不让外部 Agent 操作，自己走查 AI 产品：
+
+```bash
+export WT_LLM_BASE_URL=https://api.openai.com/v1
+export WT_LLM_API_KEY=...
+export WT_LLM_MODEL=gpt-4o-mini
+
+python3 harness/wt.py new-run 2026-10-29-<tool>
+python3 harness/wt.py --run runs/2026-10-29-<tool> agent \
+  --goal "完成一次完整走查：打开对话、发一条消息、记录异常" \
+  --backend cdp --port 9339 --max-steps 20
+```
+
+- `--backend cdp`：Chromium / Electron 产品，走截图 + DOM 文本 + CDP 输入；先启动被测产品并加 `--remote-debugging-port=9339`
+- `--backend desktop --display :0`：Linux/X11 原生桌面，截图 + xdotool；`--ocr` 才加 tesseract 文本
+- `--dry-run`：只观察和计划，不点击；`--max-steps` / `--max-total-tokens` 控成本
+- 产物：`shots/agent-step-*.png`、`events.jsonl`、`findings.json`、`agent-summary.md`
+- key 只从环境变量读取，不接受命令行参数；不要写进仓库或报告。不要把明文 key 留在 shell 历史里，可用 `read -rs WT_LLM_API_KEY && export WT_LLM_API_KEY` 或密钥管理器
+- 第一版只承诺 Linux；macOS / Windows 的 CDP 可用，原生输入未实测
+- operator 的 `findings.json` 是待复核的发现，不是最终结论；报告仍按 METHOD 写，`audit` 仍要做
+
+模型必须支持图片输入。纯文本模型即使开 `--ocr` 也只能靠坐标猜，不能当作可靠走查。
 
 ## 日常工作流（单仓）
 

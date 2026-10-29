@@ -8,6 +8,7 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py --run runs/2026-10-19-tool shot out.png
   python3 harness/wt.py --run runs/2026-10-19-tool click 300 241 --shot out.png
   python3 harness/wt.py --run runs/2026-10-19-tool ocr out.png
+  python3 harness/wt.py --run runs/2026-10-19-tool agent --goal "完成一次走查" --backend cdp --port 9339
   python3 harness/wt.py --run runs/2026-10-19-tool launch --log app.log -- /path/to/app
   python3 harness/wt.py report runs/2026-10-19-tool
   python3 harness/wt.py audit --strict runs/2026-10-19-tool
@@ -175,6 +176,12 @@ def cmd_preflight(a):
         + ("enabled: wt.py click moves the real pointer; prefer cdp.py"
            if native_ok else "disabled: cdp.py only, the pointer stays yours")
     )
+    llm_key = bool((os.environ.get("WT_LLM_API_KEY") or "").strip())
+    llm_model = os.environ.get("WT_LLM_MODEL") or "default"
+    print(f"{'llm key':<24} {'INFO':<5} " + (
+        f"set; model={llm_model}" if llm_key else
+        "not set; `wt.py agent` will refuse until WT_LLM_API_KEY is exported"
+    ))
     if lock and lock.get("wt_version") and lock["wt_version"] != WT_VERSION:
         say("lock version", False, f"lock={lock['wt_version']} wt={WT_VERSION}", warn_only=True)
     return 1 if rc else 0
@@ -621,6 +628,55 @@ def cmd_focus(a):
     return {"target": name, "detail": f"window {ids[-1]}"}
 
 
+def cmd_agent(a):
+    """Run the LLM operator against a CDP or desktop backend."""
+    from dataclasses import replace
+
+    from llm_client import ChatClient, LLMConfig, LLMError
+    from llm_operator import Operator, OperatorError, make_backend
+
+    run = resolve_run(a)
+    if run is None:
+        stamp = datetime.now().strftime("%Y-%m-%d-%H%M%S")
+        run = ROOT / "runs" / f"{stamp}-agent"
+    try:
+        cfg = LLMConfig.from_env()
+        if getattr(a, "model", None):
+            cfg = replace(cfg, model=a.model)
+        backend = make_backend(
+            a.backend,
+            port=a.port,
+            match=a.match,
+            kind=a.kind,
+            nested=a.nested,
+            display=a.display,
+            geometry=a.geometry,
+            ocr=a.ocr,
+        )
+        operator = Operator(
+            ChatClient(cfg), backend, run, a.goal,
+            max_steps=a.max_steps,
+            max_seconds=a.max_seconds,
+            max_total_tokens=a.max_total_tokens,
+            dry_run=a.dry_run,
+        )
+        result = operator.run_loop()
+    except (LLMError, OperatorError) as exc:
+        raise SystemExit(f"agent: {exc}") from None
+    except Exception as exc:
+        raise SystemExit(f"agent: {type(exc).__name__}: {exc}") from None
+    print(f"agent run: {run}")
+    print(f"status: {result.status}  steps: {result.steps}  findings: {len(result.findings)}")
+    print(f"summary: {run / 'agent-summary.md'}")
+    print(f"data:    {run / 'findings.json'}")
+    return {
+        "target": str(run),
+        "status": result.status,
+        "detail": f"{result.steps} steps, {len(result.findings)} findings",
+        "_rc": 0 if result.status in ("done", "blocked") else 1,
+    }
+
+
 def cmd_report(a):
     script = ROOT / "harness" / "build-report.py"
     cmd = [sys.executable, str(script), a.run_dir, "--out", a.out]
@@ -694,6 +750,23 @@ def main():
     p.add_argument("name", help="process name substring (Windows) or window title (Linux/macOS)")
     p.set_defaults(func=cmd_focus)
 
+    p = sub.add_parser("agent", help="let an LLM operate the product (CDP or Linux desktop)")
+    p.add_argument("--goal", required=True, help="what the walkthrough should accomplish")
+    p.add_argument("--max-steps", type=int, default=20)
+    p.add_argument("--max-seconds", type=float, default=600)
+    p.add_argument("--max-total-tokens", type=int, default=200000)
+    p.add_argument("--backend", choices=["cdp", "desktop"], default="cdp")
+    p.add_argument("--port", type=int, default=9339)
+    p.add_argument("--match", default=None, help="CDP page URL substring")
+    p.add_argument("--kind", choices=["page", "iframe", "any"], default="page")
+    p.add_argument("--nested", action="store_true", help="evaluate inside the first inner iframe")
+    p.add_argument("--display", default=None)
+    p.add_argument("--geometry", default=None)
+    p.add_argument("--ocr", action="store_true", help="desktop: include tesseract text")
+    p.add_argument("--dry-run", action="store_true", help="observe and plan, but do not act")
+    p.add_argument("--model", default=None, help="override WT_LLM_MODEL")
+    p.set_defaults(func=cmd_agent)
+
     p = sub.add_parser("report", help="render report.md to PDF")
     p.add_argument("run_dir")
     p.add_argument("--out", default="report.pdf")
@@ -736,7 +809,8 @@ def main():
     try:
         result = a.func(a)
         if isinstance(result, dict):
-            extra, rc = result, 0
+            extra = {k: v for k, v in result.items() if not k.startswith("_")}
+            rc = int(result.get("_rc", 0))
         elif isinstance(result, int):
             extra, rc = {}, result
         else:
