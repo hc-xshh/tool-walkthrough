@@ -41,6 +41,11 @@ class ReportShareTest(unittest.TestCase):
         self.assertIn("data:image/png;base64,", page)
         self.assertNotIn('src="shots/a.png"', page)
 
+    def test_html_escapes_title(self):
+        page = report_share.md_to_html("x", self.root, "<script>alert(1)</script>")
+        self.assertNotIn("<script>alert(1)</script>", page)
+        self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", page)
+
     def test_thumb_falls_back_to_full_size_original(self):
         _png(self.root / "shots" / "thumbs" / "a.png", size=(8, 8))
         _png(self.root / "shots" / "full" / "a.png", size=(20, 20))

@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.6**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
+当前方法版本：**v6.7**（变更见 [`CHANGELOG.md`](CHANGELOG.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -188,7 +188,7 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 ## 适配点
 
 - `python3 harness/wt.py preflight`：三平台统一预检（Python、tesseract、Chrome、截图/点击工具、Linux display）。
-- `node harness/webapp_accept.mjs --dir <project> --out accept.json`：全栈 TaskFlow 参考验收（43 项，随机端口 + 全新 DB + 进程树回收）。
+- `node harness/webapp_accept.mjs --dir <project> --out accept.json`：全栈 TaskFlow 参考验收（43 项，随机端口 + 全新 DB + 进程树回收）。全过退 0，任一 FAIL 退 1；结果 JSON 照常写出。
 - `wt.py shot|click|ocr|launch|new-run|report`：三平台统一入口；命令参数放在 `--` 之后（`launch --log x -- /path/app`）。
 - `preflight.sh`、`desktop-up.sh`、`app-launch.sh`、`shot.sh`、`click.sh`、`portal-shot.py` 是 Linux 原生脚本，保留兼容；跨平台优先用 `wt.py`。
 

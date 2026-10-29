@@ -2,6 +2,18 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.7（2026-10-29，验收退出码、并行清理、token 记分）
+
+- **`webapp_accept.mjs` 不再假绿**：此前无论多少 FAIL 都 `exit 0`，CI 和调用方看不到失败；
+  现在全过才 0，否则 1（JSON 仍照常写出）。
+- **并行安全**：结束时只删本轮 `DB_FILE` 及 `-wal`/`-shm`；原来按 `accept-*.db` 通配，
+  会把同一目录下另一个并行任务的库删掉。
+- **`report_share.py`**：HTML `<title>` 做转义；`thumbs/a.png` 优先取同级 `a.png`，
+  找不到再全目录回退，避免同名图取错。
+- **成本进记分卡**：Codex 驱动器记录 `usage`（输入/输出 token），`scorecard.py` 新增 token 列；
+  旧结果从 `.trace.jsonl` 回填。L10–L12 复测：L10 667.9k、L11 431.6k、L12 157.1k。
+- 测试 102 条（新增 title 转义 1 条）。
+
 ## v6.6（2026-10-29，全栈验收归因、报表分享与钉钉单文件）
 
 - **新增 `harness/webapp_accept.mjs`**：TaskFlow 参考验收 43 项。修掉本轮最大的假阳性——`npm run start:api` 的 npm 父进程被 kill 后 node 子进程仍在监听，下一轮健康检查打到上一版服务，出现“全绿但测的是旧代码”。现在每轮随机空闲端口、启动前清端口、唯一 `DB_FILE`、结束 `taskkill /T /F`、清理 `accept-*.db`，并把端口/PID 写进 JSON。

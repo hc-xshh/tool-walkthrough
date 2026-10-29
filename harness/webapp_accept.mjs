@@ -279,11 +279,12 @@ async function main() {
 function finish(child, port, dbFile) {
   killTree(child);
   setTimeout(() => killTree(child), 1500);
-  try {
-    for (const f of fs.readdirSync(dir)) {
-      if (/^accept-\d+\.db/.test(f)) fs.unlinkSync(path.join(dir, f));
-    }
-  } catch {}
+  // 只删本轮自己的 DB；按 accept-*.db 通配会误删并行运行的另一个任务。
+  for (const suffix of ['', '-wal', '-shm']) {
+    if (!dbFile) break;
+    const f = dbFile + suffix;
+    try { if (fs.existsSync(f)) fs.unlinkSync(f); } catch {}
+  }
 
   const passed = results.filter((r) => r.ok).length;
   const payload = {
@@ -293,7 +294,11 @@ function finish(child, port, dbFile) {
   };
   fs.writeFileSync(outJson, JSON.stringify(payload, null, 2));
   console.log(`\nSCORE ${passed}/${results.length} (${payload.pct}%) -> ${outJson}`);
-  setTimeout(() => process.exit(0), 1500);
+
+  // 验收失败必须让 CI / 调用方看见；此前无论多少 FAIL 都 exit 0，会出现假绿。
+  const exitCode = results.length > 0 && passed === results.length ? 0 : 1;
+  process.exitCode = exitCode;
+  setTimeout(() => process.exit(exitCode), 1500);
 }
 
 main().catch((err) => {

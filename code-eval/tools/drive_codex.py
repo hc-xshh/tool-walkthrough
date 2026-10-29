@@ -51,6 +51,26 @@ def last_agent_message(stdout):
     return text
 
 
+def usage_of(stdout):
+    """Sum `turn.completed.usage` from codex --json events."""
+    total = {"input_tokens": 0, "output_tokens": 0, "cached_input_tokens": 0}
+    for line in (stdout or "").splitlines():
+        line = line.strip()
+        if not line.startswith("{"):
+            continue
+        try:
+            event = json.loads(line)
+        except ValueError:
+            continue
+        if event.get("type") != "turn.completed":
+            continue
+        usage = event.get("usage") or {}
+        for key in total:
+            total[key] += int(usage.get(key) or 0)
+    total["total_tokens"] = total["input_tokens"] + total["output_tokens"]
+    return total
+
+
 def build_feedback(result):
     lines = ["上一轮没有通过验收，请继续在这个仓库里修（不要改 tests/）："]
     for failure in (result.get("accept") or {}).get("failures", [])[:8]:
@@ -98,6 +118,8 @@ def main():
     started = time.time()
     deadline = started + a.timebox
     timed_out = False
+    usage_total = {"input_tokens": 0, "output_tokens": 0,
+                   "cached_input_tokens": 0, "total_tokens": 0}
     index = 0
     result = None
     final_text = None
@@ -147,6 +169,9 @@ def main():
             index -= 1
             break
         p, secs, timed_out = run_codex(args, workdir, remaining)
+        round_usage = usage_of(p.stdout)
+        for key in usage_total:
+            usage_total[key] += round_usage.get(key, 0)
         msg = last_agent_message(p.stdout)
         final_text = msg if msg else None
         with log_path.open("a", encoding="utf-8") as fh:
@@ -161,6 +186,7 @@ def main():
     if result is not None:
         result["rounds"] = index
         result["rounds_to_pass"] = index if result.get("verdict") == "pass" else None
+        result["usage"] = usage_total
         Path(a.out).write_text(json.dumps(result, ensure_ascii=False, indent=2), encoding="utf-8")
     return 0 if not timed_out else 2
 

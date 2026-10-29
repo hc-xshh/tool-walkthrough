@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import html
 import io
 import mimetypes
 import os
@@ -46,6 +47,10 @@ def _find_original(src: Path, root: Path) -> Path:
     """A report may point at a small thumbs/ image; prefer the full-size sibling."""
     if "thumbs" not in src.parts:
         return src
+    # 先看同级的 thumbs 目录：shots/thumbs/a.png -> shots/a.png。
+    sibling = src.parent.parent / src.name
+    if sibling.exists() and sibling.is_file():
+        return sibling
     for candidate in root.rglob(src.name):
         if "thumbs" not in candidate.parts and "node_modules" not in candidate.parts:
             return candidate
@@ -122,10 +127,11 @@ def md_to_html(text: str, root: Path, title: str, mode: str = "original",
     inlined, n, missing = inline_images(text, root, mode=mode, width=width, quality=quality)
     body = markdown.markdown(inlined, extensions=["tables", "fenced_code", "sane_lists", "toc"],
                              output_format="html5")
+    safe_title = html.escape(title)
     return f"""<!doctype html>
 <html lang="zh-CN"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>{title}</title><style>{CSS}</style></head><body>{body}</body></html>
+<title>{safe_title}</title><style>{CSS}</style></head><body>{body}</body></html>
 """
 
 
