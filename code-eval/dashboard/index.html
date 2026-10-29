@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Eval Console · code-eval</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <a class="brand" href="#/overview" aria-label="Eval Console">
+      <span class="mark">E</span>
+      <span><strong>Eval Console</strong><small>code-eval · read only</small></span>
+    </a>
+    <nav class="nav" id="nav">
+      <a href="#/overview" data-route="overview"><span>总览</span><em>01</em></a>
+      <a href="#/tasks" data-route="tasks"><span>任务</span><em>02</em></a>
+      <a href="#/runs" data-route="runs"><span>运行</span><em>03</em></a>
+      <a href="#/compare" data-route="compare"><span>对比</span><em>04</em></a>
+    </nav>
+    <div class="rail-foot">
+      <div class="dot-line"><i></i> 本地只读</div>
+      <div id="built-at">—</div>
+      <div class="tiny">不执行任务 · 不写 runs/</div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumbs" id="crumbs"></div>
+      <div class="top-actions">
+        <label class="search">
+          <span aria-hidden="true">⌕</span>
+          <input id="search" type="search" placeholder="搜任务 / 运行 / 工具" autocomplete="off">
+        </label>
+        <span class="local-pill">LOCAL</span>
+      </div>
+    </header>
+
+    <section id="view" class="view" aria-live="polite"></section>
+
+    <footer class="foot">
+      数据源：<code>runs/*/results/*.json</code> + <code>code-eval/tasks/*.json</code>
+      · 生成于 <span id="foot-at">—</span>
+    </footer>
+  </main>
+</div>
+<div id="toast" class="toast" role="status"></div>
+<script src="data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>

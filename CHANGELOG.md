@@ -2,6 +2,16 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.9（2026-10-29，评测人员只读控制台）
+
+- **`code-eval/dashboard/`**：新增本地只读评测控制台模板（原生 HTML/CSS/JS，无第三方依赖）。
+  页面包含总览、任务目录、任务详情、运行列表、结果详情、工具 × 任务对比；结果详情展示
+  verdict、需求、隐藏验收、scope / quality / claims、diff。
+- **`build_dashboard.py`**：从 `runs/*/results/*.json` + `tasks/*.json` 生成 `runs/dashboard/data.js`；
+  结果按 `(run, task, rep)` 去重取最新，token 从 result/trace 回填，不上传、不写 runs。
+- **输出在 `runs/dashboard/`**，跟 `runs/` 一起 gitignore；模板和用法见 `code-eval/dashboard/README.md`。
+- `verify_all.py` 的 Node 语法检查同时覆盖 `harness/webapp_accept.mjs` 和 `code-eval/dashboard/app.js`。
+
 ## v6.8（2026-10-29，可用性与可解释性体检）
 
 - **`preflight` 修 agent shell 的假失败**：桌面在跑但没有 `XAUTHORITY` 时，自动尝试

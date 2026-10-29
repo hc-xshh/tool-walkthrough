@@ -63,7 +63,13 @@ def check_node():
     node = shutil.which("node")
     if not node:
         return None
-    return run([node, "--check", "harness/webapp_accept.mjs"], 60)
+    total = 0.0
+    for rel in ("harness/webapp_accept.mjs", "code-eval/dashboard/app.js"):
+        rc, seconds, detail = run([node, "--check", rel], 60)
+        total += seconds
+        if rc != 0:
+            return rc, round(total, 1), f"{rel}: {detail}"
+    return 0, round(total, 1), "webapp_accept.mjs + dashboard/app.js"
 
 
 def check_compile():
