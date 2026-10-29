@@ -62,13 +62,22 @@ VK = {
 }
 
 
-def require_real_window(title, disp=":0"):
+def _window_ids(xdo, pattern, field, disp):
+    p = subprocess.run(
+        [xdo, "search", "--onlyvisible", f"--{field}", pattern],
+        capture_output=True, text=True, timeout=10,
+        env=dict(os.environ, DISPLAY=disp),
+    )
+    return [x for x in (p.stdout or "").split() if x] if p.returncode == 0 else []
+
+
+def require_real_window(title, disp=":0", url=""):
     """Refuse CDP targets that are not backed by a visible desktop window.
 
     A headless Chromium has no X11/Wayland window; attaching to it would make
     the walkthrough evaluate a virtual browser and report findings that the
     real product may not have. On Linux we verify that a visible window with
-    the target's document title exists on the current DISPLAY.
+    the target's title or app class exists on the current DISPLAY.
     """
     if platform.system() != "Linux":
         return
@@ -79,20 +88,25 @@ def require_real_window(title, disp=":0"):
             "use the real display session"
         )
     title = str(title or "").strip()
-    if not title:
-        raise SystemExit(
-            "cdp: target has no window title; refusing an unverifiable/headless target"
-        )
-    p = subprocess.run(
-        [xdo, "search", "--onlyvisible", "--name", re.escape(title)],
-        capture_output=True, text=True, timeout=10,
-        env=dict(os.environ, DISPLAY=disp),
+    candidates = []
+    if title:
+        candidates.append(("name", re.escape(title)))
+    # Qoder's workbench target reports an empty document.title while the
+    # native window is titled "Qoder". Derive the app class from the custom
+    # qoder-app:// scheme instead of rejecting a real window.
+    m = re.match(r"([a-z0-9_-]+)-app://", str(url or ""), re.I)
+    if m:
+        candidates.append(("class", re.escape(m.group(1))))
+        candidates.append(("name", r"(?i)" + re.escape(m.group(1))))
+    for field, pattern in candidates:
+        ids = _window_ids(xdo, pattern, field, disp)
+        if ids:
+            return ids[0]
+    shown = title or url or "(empty title)"
+    raise SystemExit(
+        f"cdp: no visible real-desktop window for {shown!r}; "
+        "headless/virtual targets are disabled"
     )
-    if p.returncode != 0 or not (p.stdout or "").strip():
-        raise SystemExit(
-            f"cdp: no visible real-desktop window for {title!r}; "
-            "headless/virtual targets are disabled"
-        )
 
 
 def _log(op, target, status, started, screenshot=None, detail=""):
@@ -174,7 +188,10 @@ class CDP:
                     f"cdp: virtual displays are disabled ({disp}); use DISPLAY=:0"
                 )
             verify_real_session(disp)
-            require_real_window(self.eval("document.title"), disp)
+            require_real_window(
+                self.eval("document.title"), disp,
+                self.eval("location.href") or "",
+            )
 
     def cmd(self, method, params=None):
         self.n += 1
