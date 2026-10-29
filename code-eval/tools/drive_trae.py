@@ -18,10 +18,18 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
 REPO = EVAL.parent
-CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--match", "solo-lite"]
+CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--match", "workbench"]
 EDITOR = ".chat-input-v2-input-box-editable"
 TMP_JS = HERE / "_drive_tmp.js"
-APPROVE_LABELS = ("本次会话允许", "本次会话", "仅本次运行", "运行", "允许")
+APPROVE_LABELS = (
+    "本次会话允许",
+    "本次会话",
+    "仅本次运行",
+    "运行",
+    "允许",
+    "信任文件夹并启用所有功能",
+    "是，我信任此作者",
+)
 
 
 def cdp(op, arg=None, timeout=90, check=False):

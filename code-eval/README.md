@@ -26,7 +26,9 @@ code-eval/
   runs/           本地产物（不在本目录，见仓库根的 .gitignore）
 ```
 
-已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）。Qoder CN 0.4.9 与四家横向（Trae / Qoder / Cursor / Codex）也跑过，但那两份报告没有入库，只在本机 `runs/` 下——不要当成可引用的公开结论。
+已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）、
+[`reports/2026-10-29-codex-l10-l12.md`](reports/2026-10-29-codex-l10-l12.md)（Codex CLI 0.163.0 / deepseek-flash，
+L10–L12 各 3 次，9/9 通过）。Qoder CN 0.4.9 与四家横向（Trae / Qoder / Cursor / Codex）也跑过，但那两份报告没有入库，只在本机 `runs/` 下——不要当成可引用的公开结论。
 
 ## 口径
 
