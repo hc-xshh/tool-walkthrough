@@ -286,7 +286,7 @@ def main():
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--timebox", type=int, default=900)
-    ap.add_argument("--tool", default="Qoder CN 0.4.9 / 编程 / Auto")
+    ap.add_argument("--tool", default="Qoder CN")
     ap.add_argument("--idle", type=int, default=30)
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--skip-workspace", action="store_true")

@@ -128,10 +128,26 @@ def cmd_preflight(a):
             say(b, bool(p), p or "missing (Linux desktop walkthroughs)", warn_only=True)
         disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":98")
         xdpy = which_any(["xdpyinfo"])
+        check_env = dict(os.environ)
+        auth_hint = ""
+        if OS == "Linux" and disp == ":0" and not check_env.get("XAUTHORITY"):
+            # An agent shell often has no DISPLAY/XAUTHORITY even when the GNOME
+            # session is running. Try the current user's Xwayland auth file for
+            # the check; tell the user the exact export instead of "start Xvfb".
+            auths = sorted(Path(f"/run/user/{os.getuid()}").glob(".mutter-Xwaylandauth.*"))
+            if auths:
+                check_env["XAUTHORITY"] = str(auths[0])
+                auth_hint = f"export DISPLAY=:0 XAUTHORITY={auths[0]}"
         ok = bool(xdpy) and subprocess.run(
-            [xdpy, "-display", disp], capture_output=True, text=True
+            [xdpy, "-display", disp], capture_output=True, text=True, env=check_env
         ).returncode == 0
-        rc |= say(f"display {disp}", ok, "ok" if ok else "start desktop-up.sh")
+        if ok:
+            detail = "ok; " + auth_hint if auth_hint else "ok"
+        elif disp == ":0":
+            detail = auth_hint or "run inside the desktop session, or set DISPLAY/XAUTHORITY"
+        else:
+            detail = "start desktop-up.sh"
+        rc |= say(f"display {disp}", ok, detail)
     elif OS == "Darwin":
         say("screencapture", bool(which_any(["screencapture"])), "system tool", warn_only=True)
         clic = which_any(["cliclick"])

@@ -71,6 +71,18 @@ def usage_of(stdout):
     return total
 
 
+def tool_label():
+    try:
+        out = subprocess.run([CODEX, "--version"], capture_output=True, text=True,
+                             encoding="utf-8", errors="replace", timeout=10)
+        line = (out.stdout or out.stderr or "").strip().splitlines()
+        if line:
+            return line[0].strip()
+    except OSError:
+        pass
+    return "Codex CLI"
+
+
 def build_feedback(result):
     lines = ["上一轮没有通过验收，请继续在这个仓库里修（不要改 tests/）："]
     for failure in (result.get("accept") or {}).get("failures", [])[:8]:
@@ -89,10 +101,12 @@ def main():
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--timebox", type=int, default=900)
-    ap.add_argument("--tool", default="Codex CLI 0.163.0 / deepseek-flash")
+    ap.add_argument("--tool", default=None)
     ap.add_argument("--idle", type=int, default=30)
     ap.add_argument("--max-rounds", type=int, default=1)
     a = ap.parse_args()
+    if not a.tool:
+        a.tool = tool_label()
 
     workdir = Path(a.workdir).resolve()
     spec = json.loads((EVAL / "tasks" / f"{a.task}.json").read_text(encoding="utf-8"))

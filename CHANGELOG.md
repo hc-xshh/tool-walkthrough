@@ -2,6 +2,18 @@
 
 版本号与 `METHOD.md` 顶部的「方法版本」一致。方法、模板或 harness 有实质改动时升一版；只改案例记录不升版。
 
+## v6.8（2026-10-29，可用性与可解释性体检）
+
+- **`preflight` 修 agent shell 的假失败**：桌面在跑但没有 `XAUTHORITY` 时，自动尝试
+  `/run/user/<uid>/.mutter-Xwaylandauth.*`，PASS 行直接给出要 export 的命令；不再误导用户去启 Xvfb。
+- **新增 `verify_all.py`**：一条命令跑单元测试、13 个任务规格、两套自测、Node 语法、Python 编译；
+  支持 `--quick`、`--strict`、`--json`。新增 `.github/workflows/verify.yml` 跑同一套检查。
+- **文档对齐**：任务数 12 → 13（12 档 + L4b 对照），测试数 97 → 102；补 Node 20+ 与
+  `office-eval/requirements.txt`。
+- **驱动器不再写死旧版本**：TRAE / Cursor / Qoder 用通用名，Codex 自动读 `codex --version`。
+- **记分卡去重**：同一 `(task, rep)` 的重复结果只保留最新文件，不再把一次尝试算两次。
+- 新增 [`AUDIT.md`](AUDIT.md)：这轮体检的范围、证据、已修项和未验证边界。
+
 ## v6.7（2026-10-29，验收退出码、并行清理、token 记分）
 
 - **`webapp_accept.mjs` 不再假绿**：此前无论多少 FAIL 都 `exit 0`，CI 和调用方看不到失败；

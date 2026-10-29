@@ -207,7 +207,7 @@ def main():
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--timebox", type=int, default=900)
-    ap.add_argument("--tool", default="Cursor 3.24.18 / Agents / Auto")
+    ap.add_argument("--tool", default="Cursor")
     ap.add_argument("--idle", type=int, default=30)
     ap.add_argument("--max-rounds", type=int, default=1)
     a = ap.parse_args()

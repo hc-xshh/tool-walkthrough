@@ -16,6 +16,12 @@ office-eval/
 
 ## 跑一次
 
+先装依赖（openpyxl）：
+
+```bash
+python -m pip install -r office-eval/requirements.txt
+```
+
 ```bash
 # 1. 复制数据包到工作目录
 cp -r office-eval/fixtures/O1-xlsx-quarterly/repo runs/<run>/work/O1-r1

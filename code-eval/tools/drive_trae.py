@@ -202,7 +202,7 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--before", default=None)
     ap.add_argument("--timebox", type=int, default=900)
-    ap.add_argument("--tool", default="TRAE CN 3.4.4 / Agent / deepseek-v4-flash")
+    ap.add_argument("--tool", default="TRAE CN")
     ap.add_argument("--prepare", action="store_true")
     ap.add_argument("--force", action="store_true")
     ap.add_argument("--debug", action="store_true")

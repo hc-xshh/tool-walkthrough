@@ -24,13 +24,17 @@ VERDICT_MARK = {
 
 
 def load(run_dir):
-    rows = []
+    rows = {}
     for path in sorted((run_dir / "results").glob("*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         if "task" in data and "verdict" in data:
             data["_usage"] = data.get("usage") or trace_usage(path)
-            rows.append(data)
-    return rows
+            key = (data["task"], data.get("rep", 1))
+            # A rerun overwrites the same rep; keep the newest file, never
+            # count both as separate attempts.
+            if key not in rows or path.stat().st_mtime >= rows[key][0]:
+                rows[key] = (path.stat().st_mtime, data)
+    return [item[1] for item in sorted(rows.values(), key=lambda x: x[0])]
 
 
 def trace_usage(result_path):
