@@ -115,7 +115,8 @@ def load_tasks(tasks_dir: Path):
             prompt_path = EVAL / spec["prompt"]
             if prompt_path.exists():
                 prompt = prompt_path.read_text(encoding="utf-8", errors="replace")
-                prompt = prompt.replace("{workdir}", "（任务工作目录，运行时替换）")
+                prompt = prompt.replace("{workdir}", "（运行时自动替换）")
+                prompt = prompt.replace("项目路径：", "工作目录：")
         tasks.append({
             "id": spec["id"],
             "level": spec.get("level"),

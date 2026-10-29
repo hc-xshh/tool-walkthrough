@@ -339,3 +339,15 @@ details .diff { border: 0; border-radius: 0 0 6px 6px; }
   .nav { grid-template-columns: repeat(5, 1fr); }
   .pick-list { grid-template-columns: 1fr; }
 }
+
+/* Chinese-first task presentation */
+.task-name { color: var(--ink); font: 500 12px/1.4 var(--sans); overflow-wrap: anywhere; }
+.task-cell .task-name { display: block; font-size: 12px; }
+.level-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 26px; padding: 2px 5px; border-radius: 4px;
+  color: var(--blue); background: var(--blue-bg);
+  border: 1px solid rgba(121,192,255,.2); font: 10px var(--mono);
+}
+.meta .v { font: 12px var(--sans); }
+.panel-head a { color: var(--blue); }

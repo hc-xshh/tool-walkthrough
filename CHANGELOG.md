@@ -5,6 +5,7 @@
 ## v6.9（2026-10-29，评测人员控制台：只读 + 本地运行）
 
 - **`code-eval/dashboard/`**：新增本地只读评测控制台模板（原生 HTML/CSS/JS，无第三方依赖）。
+- **界面中文化**：任务目录/详情、概览、运行、对比、新建页的可见标签改为中文；任务标题前置，技术编号降为辅助；任务页新增状态筛选和“用这个任务去运行”。
   页面包含总览、任务目录、任务详情、运行列表、结果详情、工具 × 任务对比；结果详情展示
   verdict、需求、隐藏验收、scope / quality / claims、diff。
 - **`build_dashboard.py`**：从 `runs/*/results/*.json` + `tasks/*.json` 生成 `runs/dashboard/data.js`；
