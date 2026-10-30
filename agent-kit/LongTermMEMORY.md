@@ -1,6 +1,6 @@
 # Long-Term Memory — Walkthrough Lessons
 
-> Format: cue → lesson → evidence → confidence, one or two lines each. Only lessons not already in `METHOD.md`. Append 1–3 per run; never paste logs.
+> Format: cue → lesson → evidence → confidence, one or two lines each. Only lessons not already in `../docs/METHOD.md`. Append 1–3 per run; never paste logs.
 > Product names are anonymised in this distributed copy: "client A" = a reviewed Electron client, "client B" = another one.
 
 - **cue**: permission dialog with "always allow for this session" → **lesson**: keep operating after choosing it; if the same prompt returns, that is a finding—screenshot both times. **evidence**: client A deep research, ≥3 prompts in one task. **confidence**: medium-high.

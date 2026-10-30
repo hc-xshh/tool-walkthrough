@@ -299,7 +299,7 @@ function viewWalkthrough() {
   const running = STATE.jobs.find((j) => j.status === "running");
   view.innerHTML = `
     <h1>发起一次走查</h1>
-    <p class="sub">工作台只负责起进程、记日志、收产物；方法本身仍然按 <code>METHOD.md</code> 走。
+    <p class="sub">工作台只负责起进程、记日志、收产物；方法本身仍然按 <code>docs/METHOD.md</code> 走。
       操作员每步看截图决定下一个动作，所以需要模型支持图片输入。</p>
     ${cfg.configured ? "" : `<div class="note warn">还没配置 key，先去 <a href="#/settings"><u>设置</u></a>。</div>`}
     <div class="grid">

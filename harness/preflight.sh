@@ -35,7 +35,7 @@ done
 if [ -z "$missing" ]; then
   say "host dependencies" "PASS"
 else
-  say "host dependencies" "WARN (missing:$missing; see INSTALL.md)"
+  say "host dependencies" "WARN (missing:$missing; see docs/INSTALL.md)"
 fi
 
 # 1. display

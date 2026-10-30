@@ -395,7 +395,7 @@ python3 harness/wt.py coverage runs/<run> --strict # 有未归属就退非 0
 
 Google Research 的 Harness²（`google-research/harness2`，Apache 2.0）把 agent 拆成 8 个可编辑组件，并做「任务级 / 改进级」两层递归。我们只借结构，不跑它的 benchmark：
 
-- **8 组件**：system prompt、guardrails、memory、tool guidance、subagents、skills、scripts、plugins。本仓库对应文件在 `walkthrough-harness/`。
+- **8 组件**：system prompt、guardrails、memory、tool guidance、subagents、skills、scripts、plugins。本仓库对应文件在 `agent-kit/`。
 - **任务级**：每次只改 1–3 个候选点，在便宜任务上试跑；有证据才写回 METHOD/模板。
 - **改进级**：每轮往 `LongTermMEMORY.md` 追加 1–3 条 cue → lesson → evidence → confidence。
 - **不做的**：不让 LLM 自动改 prompt 去刷分（没有可信 rubric 只会对噪声优化）；不跑厂商自定义的 benchmark（任务完成度评测不是体验走查，且可能带自定义许可）。

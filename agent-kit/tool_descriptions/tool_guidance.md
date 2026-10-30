@@ -1,6 +1,6 @@
 # Tool Guidance
 
-Method content is not repeated here: evidence rules and before/after pairing live in `METHOD.md` §8; environment tiers in `guardrails.md`; install verification, CDP-first order and OCR fallback in `METHOD.md` §9. What follows is only how to call the tools.
+Method content is not repeated here: evidence rules and before/after pairing live in `../docs/METHOD.md` §8; environment tiers in `guardrails.md`; install verification, CDP-first order and OCR fallback in `../docs/METHOD.md` §9. What follows is only how to call the tools.
 
 ## Read the UI
 

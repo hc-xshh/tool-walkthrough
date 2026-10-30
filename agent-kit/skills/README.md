@@ -1,6 +1,6 @@
 # Skills
 
-Four walkthrough skills. Three live in `METHOD.md` and `templates/`; `finding-writing` also ships as an executable skill file (`finding-writing/SKILL.md`). This file is the index.
+Four walkthrough skills. Three live in `../docs/METHOD.md` and `templates/`; `finding-writing` also ships as an executable skill file (`finding-writing/SKILL.md`). This file is the index.
 
 ## 1. Tool research (Step 0)
 

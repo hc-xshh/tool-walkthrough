@@ -11,7 +11,7 @@ Use this at METHOD Step 4/5: write the finding first, then score it.
 
 - Task ID and the step where it deviated.
 - At least one screenshot or log that shows the element and the consequence.
-- `METHOD.md` §4 (severity) and §5 (finding formula).
+- `../docs/METHOD.md` §4 (severity) and §5 (finding formula).
 
 ## Steps
 

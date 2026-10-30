@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.15**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
+当前方法版本：**v6.15**（变更见 [`CHANGELOG.md`](docs/CHANGELOG.md)；本轮体检见 [`AUDIT.md`](docs/AUDIT.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -11,7 +11,7 @@
 
 | 路径 | 内容 |
 |---|---|
-| `METHOD.md` | 方法本体：7 步流程（含页面地图）、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
+| `docs/METHOD.md` | 方法本体：7 步流程（含页面地图）、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
 | `templates/tool-profile.md` | 走查前的工具调研模板（事实卡 + 官方声明表） |
 | `templates/ui-map.md` | 页面地图模板（控件清单 + 归属任务 / 不测原因） |
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 覆盖控件 / 结果 / 证据） |
@@ -21,7 +21,7 @@
 | `verify_all.py` | 一条命令跑完整健康检查：单元测试、任务规格、两个自测、Node 语法、Python 编译 |
 | `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
-| `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
+| `agent-kit/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
 | `workbench/` | 本地工作台：设置页配 endpoint / 模型 / key + 环境自检；走查页起 `wt.py agent`；评测页起 `run_tool.py`；运行页看日志、截图与产物 |
 
 ## 不包含什么
@@ -37,7 +37,7 @@ Linux / macOS / Windows 都能跑；Linux 最完整，macOS 与 Windows 用 `wt.
 
 需要：Python 3.9+、git 2.20+（`new-run.sh` 找仓根、钩子和 `code-eval` 的 diff 都要用）、tesseract（含 `chi_sim`）、Chrome/Chromium，以及四个 pip 包（requests、websocket-client、markdown、Pillow——Pillow 只用于截图涂白）。跑 `harness/webapp_accept.mjs` 或 `code-eval` 的 L12 需要 Node 20+；`office-eval` 另需 `openpyxl`（`pip install -r office-eval/requirements.txt`）；单文件 HTML / PDF 用 Chrome / Chromium / Edge 生成。评测只跑真实桌面；`ffmpeg`、`xdotool` 必装。虚拟桌面路径已移除，不再支持 `:98` / `:99` 或 Xvfb。
 
-完整安装命令与排错见 [`INSTALL.md`](INSTALL.md)。
+完整安装命令与排错见 [`INSTALL.md`](docs/INSTALL.md)。
 
 ## 快速开始
 
@@ -50,7 +50,7 @@ python3 harness/wt.py new-run 2026-10-19-<tool>
 
 # 0. 先做工具调研（20–30 分钟，只读文档，不预演界面）
 #    产出 runs/<date>-<tool>/tool-profile.md（new-run 已复制模板）
-#    来源优先级与 8 项清单见 METHOD.md 的 Step 0
+#    来源优先级与 8 项清单见 docs/METHOD.md 的 Step 0
 
 # 1. 预检（三平台）
 python3 harness/wt.py preflight
@@ -263,6 +263,6 @@ macOS 需要给终端 / agent 进程开 **屏幕录制** 和 **辅助功能**；
 
 ## 来源与许可
 
-- 方法参考 NN/g 的严重度与可执行发现、Maze / DHS 的报告结构、Builders Camp 的「前三 + backlog」，出处见 `METHOD.md` 第 13 节。
-- `walkthrough-harness/` 只借鉴 Google Harness²（Apache-2.0）的组件划分，未复制其代码，也不跑其 benchmark。
+- 方法参考 NN/g 的严重度与可执行发现、Maze / DHS 的报告结构、Builders Camp 的「前三 + backlog」，出处见 `docs/METHOD.md` 第 13 节。
+- `agent-kit/` 只借鉴 Google Harness²（Apache-2.0）的组件划分，未复制其代码，也不跑其 benchmark。
 - 本包以 MIT 许可发布，见 [`LICENSE`](LICENSE)。
