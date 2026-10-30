@@ -1,13 +1,15 @@
 #!/usr/bin/env bash
-# Start the walkthrough workbench: the local page that configures the model,
-# launches walkthrough / eval runs, and streams their logs and artifacts.
+# Start — or reuse — the walkthrough workbench: the local page that configures
+# the model, launches walkthrough / eval runs, and streams logs and artifacts.
 #
-#   ./start.sh                  # http://127.0.0.1:8790/ (next free port if busy)
-#   ./start.sh --port 8791      # pin the port; fails loudly if it is taken
-#   ./start.sh --host 127.0.0.1 # loopback only, --host is passed through
+#   ./start.sh                  # reuse a running workbench, else start on 8790
+#   ./start.sh --port 8791      # reuse the workbench on 8791, else start there
+#   ./start.sh --host 127.0.0.1 # passed through to server.py
 #
-# Whatever the script does not consume is handed to workbench/server.py, so
-# `./start.sh --help` shows the server's own options.
+# Idempotent: a second run never starts a second instance. It looks for the
+# workbench recorded in runs/workbench/server.json, or one already answering on
+# the requested port (server.py identifies itself with a Server header), prints
+# the URL and exits 0. Only when none is found does it start one.
 #
 # Windows: python workbench\server.py
 set -euo pipefail
@@ -17,6 +19,8 @@ cd "$ROOT"
 
 PY="${PYTHON:-python3}"
 SERVER="$ROOT/workbench/server.py"
+STATE="$ROOT/runs/workbench/server.json"
+DEFAULT_PORT=8790
 
 if ! command -v "$PY" >/dev/null 2>&1; then
   echo "start: 找不到 $PY；装 Python 3.9+，或用 PYTHON=/path/to/python3 ./start.sh" >&2
@@ -40,7 +44,7 @@ done
 
 # Read --port / --host without consuming them, so "$@" stays intact for exec.
 args=("$@")
-port=8790
+port=$DEFAULT_PORT
 host=127.0.0.1
 port_given=0
 i=0
@@ -76,9 +80,26 @@ case "$port" in
     ;;
 esac
 
-# A bind test is enough: the server itself has no busy-port fallback.
+# 0 = a workbench answers, 1 = some other service, 2 = nothing listening.
+# The Server header comes from server.py, so a stray dev server never counts.
+probe() {
+  "$PY" - "$1" "$2" <<'PY'
+import http.client, socket, sys
+
+host, port = sys.argv[1], int(sys.argv[2])
+try:
+    conn = http.client.HTTPConnection(host, port, timeout=1.0)
+    conn.request("GET", "/")
+    server = conn.getresponse().getheader("Server") or ""
+except (ConnectionError, OSError, socket.timeout):
+    sys.exit(2)
+sys.exit(0 if "WalkthroughWorkbench" in server else 1)
+PY
+}
+
+# Bind test: the server has no busy-port fallback of its own.
 port_free() {
-  "$PY" - "$host" "$1" <<'PY'
+  "$PY" - "$1" "$2" <<'PY'
 import socket, sys
 
 host, port = sys.argv[1], int(sys.argv[2])
@@ -90,16 +111,81 @@ except OSError:
 PY
 }
 
-if ! port_free "$port"; then
+announce_running() {
+  echo "start: 工作台已在运行 → http://$1:$2/"
+  echo "start: 没有重复启动；要重启先停掉那个进程（Ctrl-C）"
+  exit 0
+}
+
+# Last instance we started: {"host", "port"} in runs/workbench/server.json.
+read_state() {
+  [ -f "$STATE" ] || return 1
+  local out
+  out=$("$PY" - "$STATE" <<'PY'
+import json, sys
+
+try:
+    with open(sys.argv[1], encoding="utf-8") as fh:
+        data = json.load(fh)
+except (OSError, ValueError):
+    sys.exit(1)
+port = data.get("port")
+if not isinstance(port, int):
+    sys.exit(1)
+print(f"{data.get('host') or '127.0.0.1'} {port}")
+PY
+  ) || return 1
+  state_host="${out%% *}"
+  state_port="${out##* }"
+}
+
+write_state() {
+  mkdir -p "$(dirname "$STATE")"
+  "$PY" - "$STATE" "$1" "$2" <<'PY'
+import json, os, sys, tempfile
+from datetime import datetime
+
+path, host, port = sys.argv[1], sys.argv[2], int(sys.argv[3])
+data = {"host": host, "port": port, "url": f"http://{host}:{port}/",
+        "started": datetime.now().isoformat(timespec="seconds")}
+fd, tmp = tempfile.mkstemp(dir=os.path.dirname(path), prefix=".server.", suffix=".json")
+with os.fdopen(fd, "w", encoding="utf-8") as fh:
+    json.dump(data, fh, ensure_ascii=False)
+    fh.write("\n")
+os.replace(tmp, path)
+PY
+}
+
+# 1. Reuse anything already answering on the requested address.
+if probe "$host" "$port"; then
+  write_state "$host" "$port"
+  announce_running "$host" "$port"
+fi
+
+# 2. With no --port, honor the instance recorded by a previous run, wherever
+#    it ended up (the default port may be taken by an unrelated service).
+if [ "$port_given" -eq 0 ]; then
+  if read_state && probe "$state_host" "$state_port"; then
+    write_state "$state_host" "$state_port"
+    announce_running "$state_host" "$state_port"
+  fi
+fi
+
+if ! port_free "$host" "$port"; then
   if [ "$port_given" -eq 1 ]; then
-    echo "start: $host:$port 已被占用；换一个端口：./start.sh --port $((port + 1))" >&2
+    echo "start: $host:$port 已被其他服务占用；换一个端口：./start.sh --port $((port + 1))" >&2
     exit 1
   fi
-  # No --port was given, so "$@" carries nothing to strip: just add the one
-  # we picked.
+  # Scan upward: reuse a workbench found on the way (a fallback port from an
+  # earlier run), otherwise take the first free port.
   for ((candidate = port + 1; candidate <= port + 20; candidate++)); do
-    if port_free "$candidate"; then
-      echo "start: $host:$port 已被占用，改用 $candidate" >&2
+    if probe "$host" "$candidate"; then
+      write_state "$host" "$candidate"
+      announce_running "$host" "$candidate"
+    fi
+    if port_free "$host" "$candidate"; then
+      echo "start: $host:$port 已被其他服务占用，改用 $candidate" >&2
+      write_state "$host" "$candidate"
       exec "$PY" -u "$SERVER" --port "$candidate" "$@"
     fi
   done
@@ -107,4 +193,5 @@ if ! port_free "$port"; then
   exit 1
 fi
 
+write_state "$host" "$port"
 exec "$PY" -u "$SERVER" "$@"

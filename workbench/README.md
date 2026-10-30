@@ -3,10 +3,12 @@
 把 harness 的常用动作收进一个本地页面：**配置模型 → 选任务 → 跑 → 看产物**。
 
 ```bash
-./start.sh                                  # 仓库根目录；http://127.0.0.1:8790/
-./start.sh --port 8791                      # 固定端口；被占用会报错，不会偷偷换
+./start.sh                                  # 幂等：已有实例就复用，否则起 8790
+./start.sh --port 8791                      # 指定端口；被别的服务占用会报错
 python3 workbench/server.py                 # 等价的直接启动（Windows 用这条）
 ```
+
+`start.sh` 会把最后启动的实例记在 `runs/workbench/server.json`，下次无论在哪个端口都会先探测并复用，不会重复起进程。
 
 只依赖 Python 标准库。走查后端（CDP / 桌面）需要 `harness/requirements.txt` 里的包：
 第一次打开「设置 → 环境自检」，缺什么点「安装依赖」——装到 `workbench/.deps/`，不碰系统 Python，
