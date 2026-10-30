@@ -19,7 +19,7 @@
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`llm_operator.py` 让自带 LLM key 的 operator 自己观察/操作被测产品；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
 | `verify_all.py` | 一条命令跑完整健康检查：单元测试、任务规格、两个自测、Node 语法、Python 编译 |
-| `start.sh` | 一条命令起工作台：查 Python 版本、复用已在跑的实例（幂等）、挑可用端口，再交给 `workbench/server.py`；参数原样透传 |
+| `start.sh` | 一条命令起工作台：按端口探测自动停掉旧实例（不用知道它在哪个终端）、挑可用端口、启动；`--reuse` 只复用不重启，`--force` 有任务在跑也重启 |
 | `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `agent-kit/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
@@ -101,8 +101,9 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 不想记命令时，用一个本地页面把「配置 → 选任务 → 跑 → 看产物」串起来：
 
 ```bash
-./start.sh                             # 幂等：已在跑就复用，否则起 8790（被占则顺延）
-./start.sh --port 8791                 # 指定端口；已有实例就复用，被别的服务占用则报错
+./start.sh                             # 停掉旧实例，在 8790 起新的（被占则顺延）
+./start.sh --reuse                     # 已经在跑就复用，不重启
+./start.sh --force                     # 有任务在跑也强制重启（默认会拒绝）
 ```
 
 `start.sh` 只做启动前检查，真正的服务还是 `python3 workbench/server.py`（Windows 直接跑这条）。

@@ -23,6 +23,7 @@ import os
 import re
 import secrets
 import shutil
+import signal
 import socket
 import subprocess
 import sys
@@ -767,6 +768,13 @@ def main() -> int:
     print(f"config                 {cfg['path']}  "
           f"({'key set: ' + cfg['key_hint'] if cfg['configured'] else 'no key yet'})")
     print("Ctrl-C to stop. Jobs keep their logs under runs/workbench/jobs/.")
+
+    # SIGTERM (kill, or start.sh restarting us) must take the same path as
+    # Ctrl-C so child jobs are stopped instead of orphaned by the exit.
+    def on_sigterm(_signum, _frame):
+        raise KeyboardInterrupt
+
+    signal.signal(signal.SIGTERM, on_sigterm)
     try:
         server.serve_forever()
     except KeyboardInterrupt:
