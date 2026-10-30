@@ -40,6 +40,7 @@ import re
 import shutil
 import struct
 import subprocess
+import sys
 import time
 from datetime import datetime
 from pathlib import Path
@@ -50,9 +51,21 @@ try:
     import requests
     import websocket
 except ImportError as exc:  # actionable error when another project venv is active
-    raise SystemExit(
-        f"missing dependency: {exc.name}; run: pip install -r harness/requirements.txt"
-    )
+    # The workbench installs these into workbench/.deps to stay clear of
+    # PEP 668 / missing ensurepip; pick that up without asking the user to
+    # remember PYTHONPATH.
+    fallback = Path(__file__).resolve().parent.parent / "workbench" / ".deps"
+    if fallback.is_dir():
+        sys.path.insert(0, str(fallback))
+        import importlib
+        importlib.invalidate_caches()
+        import requests  # noqa: F401
+        import websocket  # noqa: F401
+    else:
+        raise SystemExit(
+            f"missing dependency: {exc.name}; run: pip install -r harness/requirements.txt "
+            f"(or use 设置 → 安装依赖 in workbench)"
+        )
 
 
 VK = {
@@ -131,7 +144,7 @@ def _log(op, target, status, started, screenshot=None, detail=""):
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
-def pick_target(tabs, match=None, kind="page"):
+def pick_target(tabs, match=None, kind="page", title_match=None):
     """Pick the main app page, not a pet/helper/empty target.
 
     Electron apps expose several `page` targets (Qoder: desktop-pet first,
@@ -142,6 +155,8 @@ def pick_target(tabs, match=None, kind="page"):
     pages = [t for t in tabs if t.get("type") in kinds]
     if match:
         pages = [t for t in pages if match in (t.get("url") or "")]
+    if title_match:
+        pages = [t for t in pages if title_match in (t.get("title") or "")]
     if not pages:
         return None
 
@@ -167,26 +182,26 @@ def pick_target(tabs, match=None, kind="page"):
     return max(pages, key=score)
 
 
-def page_ws(port, match=None, kind="page"):
+def page_ws(port, match=None, kind="page", title_match=None):
     tabs = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=5).json()
-    target = pick_target(tabs, match, kind)
+    target = pick_target(tabs, match, kind, title_match)
     if not target:
-        raise SystemExit("no %s target on port %s%s" % (kind, port, f" matching {match!r}" if match else ""))
+        want = f" matching {match!r}" if match else ""
+        if title_match:
+            want += f" with title containing {title_match!r}"
+        raise SystemExit("no %s target on port %s%s" % (kind, port, want))
     return target["webSocketDebuggerUrl"]
 
 
 class CDP:
-    def __init__(self, port, match=None, kind="page", nested=False):
+    def __init__(self, port, match=None, kind="page", nested=False, title_match=None):
         # suppress_origin: Chrome rejects the default websocket Origin with 403
-        self.ws = websocket.create_connection(page_ws(port, match, kind), timeout=30, suppress_origin=True)
+        self.ws = websocket.create_connection(
+            page_ws(port, match, kind, title_match), timeout=30, suppress_origin=True)
         self.n = 0
         self.nested = nested
         disp = os.environ.get("DISPLAY") or ":0"
         if platform.system() == "Linux":
-            if disp.split(".")[0] != ":0":
-                raise SystemExit(
-                    f"cdp: virtual displays are disabled ({disp}); use DISPLAY=:0"
-                )
             verify_real_session(disp)
             require_real_window(
                 self.eval("document.title"), disp,
@@ -243,6 +258,9 @@ def main():
                     help="0-based match index for clicktext/clickel (default: last)")
     ap.add_argument("--match", default=None,
                     help="pick the first page target whose URL contains this string (e.g. app://renderer)")
+    ap.add_argument("--match-title", default=None,
+                    help="pick the target whose window title contains this string "
+                         "(distinguishes several windows of the same app)")
     ap.add_argument("--kind", default="page", choices=["page", "iframe", "any"],
                     help="target type to attach to; IDE webview panels live in 'iframe'")
     ap.add_argument("--nested", action="store_true",
@@ -262,7 +280,7 @@ def main():
     status, detail, shot_path = "ok", "", None
 
     try:
-        c = CDP(a.port, a.match, a.kind, a.nested)
+        c = CDP(a.port, a.match, a.kind, a.nested, a.match_title)
         if a.op == "text":
             print((c.eval("document.body.innerText") or "")[:6000])
         elif a.op == "eval":

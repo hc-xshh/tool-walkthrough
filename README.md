@@ -2,7 +2,7 @@
 
 一套可复用的「AI 工具 / 桌面应用」体验走查方法：**任务驱动的流程 + 隔离桌面 harness + 报告标准**。
 
-当前方法版本：**v6.14**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
+当前方法版本：**v6.15**（变更见 [`CHANGELOG.md`](CHANGELOG.md)；本轮体检见 [`AUDIT.md`](AUDIT.md)）。
 
 > 回答的不是「界面好不好看」，而是：**这个工具在哪些地方让人做不成事、做错事；证据是什么，多严重，多可信。**
 > n=1 是探索性观察，不外推；报告是问题清单，不是过程记录。读的人可以从清单里读出决定，但报告不替他下结论。
@@ -22,6 +22,7 @@
 | `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `walkthrough-harness/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
+| `workbench/` | 本地工作台：设置页配 endpoint / 模型 / key + 环境自检；走查页起 `wt.py agent`；评测页起 `run_tool.py`；运行页看日志、截图与产物 |
 
 ## 不包含什么
 
@@ -93,6 +94,22 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 ```
 
 > macOS / Windows 分支已经实现，但尚未在真机实测；第一次用先跑 `python3 harness/wt.py preflight`，按输出补依赖和权限。
+
+## 工作台（可选）
+
+不想记命令时，用一个本地页面把「配置 → 选任务 → 跑 → 看产物」串起来：
+
+```bash
+python3 workbench/server.py            # http://127.0.0.1:8790/
+```
+
+- 设置页把 endpoint / 模型 / key 写进 `~/.config/tool-walkthrough/config.json`（`0600`）；浏览器只拿回“是否已配置”和末四位。
+- 走查页启动 `harness/wt.py agent`；评测页启动 `code-eval/tools/run_tool.py`（外部 CLI 用各自的登录态，不读这个 key）。
+- 环境自检会检查真实桌面会话、CDP 依赖、调试端口、`xdotool`、key；缺依赖可以一键装进 `workbench/.deps`。
+- 运行页看实时日志、截图、`agent-summary.md` / `findings.json`；产物仍在 `runs/<run>/`，命令行工具照样能接手。
+- 只绑 `127.0.0.1`，写请求校验一次性 token 和 Host/Origin。
+
+> 走查后端沿用 v6.14 的真实桌面策略：`DISPLAY=:0` + 活跃 session；Xvfb / `:98` 这类虚拟显示会被拒绝。
 
 ## LLM 自带走查（可选）
 

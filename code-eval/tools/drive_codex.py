@@ -26,6 +26,11 @@ def run_codex(args, cwd, timeout):
         p = subprocess.run(args, cwd=str(cwd), capture_output=True, text=True,
                            encoding="utf-8", errors="replace", timeout=timeout)
         return p, round(time.time() - started, 1), False
+    except FileNotFoundError:
+        raise SystemExit(
+            "codex not found in PATH. Install Codex CLI, or pick another driver "
+            "(Qoder / Cursor / TRAE) in the workbench."
+        ) from None
     except subprocess.TimeoutExpired as e:
         out = (e.stdout or "") if isinstance(e.stdout, str) else ""
         err = (e.stderr or "") if isinstance(e.stderr, str) else ""

@@ -20,24 +20,8 @@ LOCK_FILE = ROOT / "harness" / "harness.lock"
 _REAL_SESSION = {}
 
 
-def verify_real_session(disp=":0", refresh=False):
-    """Prove that Linux is on an active, seated desktop session.
-
-    `DISPLAY=:0` alone is only a name; Xvfb/Xephyr can also bind :0. This
-    checks logind's active session, the Wayland socket for a Wayland session,
-    or a real connected X11 output before the harness touches the desktop.
-    Other operating systems are outside this Linux-only gate.
-    """
-    if OS != "Linux":
-        return {"type": OS, "display": disp, "source": "non-linux"}
-    key = (str(disp), os.getuid())
-    if not refresh and key in _REAL_SESSION:
-        return _REAL_SESSION[key]
-    value = str(disp or ":0").strip()
-    if value.split(".")[0] != ":0":
-        raise SystemExit(
-            f"virtual displays are disabled ({value}); use the real desktop DISPLAY=:0"
-        )
+def active_session():
+    """(session id, properties) for this user's active, seated session."""
     loginctl = which_any(["loginctl"])
     if not loginctl:
         raise SystemExit(
@@ -57,10 +41,10 @@ def verify_real_session(disp=":0", refresh=False):
             cols = line.split()
             if len(cols) >= 4 and cols[1] == str(os.getuid()) and cols[3] != "-":
                 sessions.append(cols[0])
-    chosen = None
     for candidate in sessions:
         q = subprocess.run(
-            [loginctl, "show-session", candidate, "-p", "Type", "-p", "Active", "-p", "Seat"],
+            [loginctl, "show-session", candidate, "-p", "Type", "-p", "Active",
+             "-p", "Seat", "-p", "Display"],
             capture_output=True, text=True, timeout=10,
         )
         props = {}
@@ -69,14 +53,44 @@ def verify_real_session(disp=":0", refresh=False):
                 k, v = line.split("=", 1)
                 props[k.strip()] = v.strip()
         if props.get("Active") == "yes" and props.get("Seat") not in (None, "", "-"):
-            chosen = (candidate, props)
-            break
-    if not chosen:
+            return candidate, props
+    raise SystemExit(
+        "real-desktop check failed: no active logind session with a seat; "
+        "use the real desktop, not a headless/container display"
+    )
+
+
+def session_display(default=":0"):
+    """Display of the active seated session; ':1' in a container/VM, say."""
+    try:
+        _, props = active_session()
+    except SystemExit:
+        return default
+    return (props.get("Display") or default).strip() or default
+
+
+def verify_real_session(disp=":0", refresh=False):
+    """Prove that Linux is on an active, seated desktop session.
+
+    A display name alone is not proof: Xvfb/Xephyr can bind any number, and a
+    container may expose the host session as :1 rather than :0. So the display
+    must match the one logind reports for the active seated session, and the
+    session must have a real X11 output or a Wayland socket.
+    Other operating systems are outside this Linux-only gate.
+    """
+    if OS != "Linux":
+        return {"type": OS, "display": disp, "source": "non-linux"}
+    key = (str(disp), os.getuid())
+    if not refresh and key in _REAL_SESSION:
+        return _REAL_SESSION[key]
+    value = str(disp or ":0").strip()
+    sid, props = active_session()
+    expected = (props.get("Display") or "").strip()
+    if expected and value.split(".")[0] != expected.split(".")[0]:
         raise SystemExit(
-            "real-desktop check failed: no active logind session with a seat; "
-            "use the real desktop, not a headless/container display"
+            f"virtual displays are disabled: DISPLAY={value} is not the active "
+            f"session's display ({expected})"
         )
-    sid, props = chosen
     stype = (props.get("Type") or "").lower()
     if stype == "wayland":
         runtime = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"

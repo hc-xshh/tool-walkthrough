@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Preflight checks before a real-desktop walkthrough (real DISPLAY=:0 only).
+# Preflight checks before a real-desktop walkthrough (active seated session).
 # Usage: preflight.sh [--display :0] [--app <name>] [--port 9339]
 #                     [--sandbox /path/to/chrome-sandbox] [--home-dir /path/to/login-state]
 #
@@ -7,7 +7,7 @@
 # --sandbox / --home-dir at the paths that apply to the tool under test.
 set -uo pipefail
 
-DISP=":0"
+DISP="${DISPLAY:-:0}"
 APP=""
 PORT=""
 SANDBOX=""
@@ -26,11 +26,6 @@ done
 
 fail=0
 say() { printf '%-28s %s\n' "$1" "$2"; }
-
-case "$DISP" in
-  :0|:0.*) ;;
-  *) say "display $DISP" "FAIL (virtual displays are disabled; use :0)"; exit 2 ;;
-esac
 
 # 0. host dependencies
 missing=""

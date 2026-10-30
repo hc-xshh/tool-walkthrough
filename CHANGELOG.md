@@ -1,5 +1,32 @@
 # Changelog
 
+## v6.15（2026-10-30，本地工作台）
+
+- **`workbench/`**：本地页面把「配置 → 选任务 → 跑 → 看产物」串起来；`python3 workbench/server.py` 打开 `http://127.0.0.1:8790/`。
+  设置页写 `~/.config/tool-walkthrough/config.json`（0600）；走查页起 `wt.py agent`，评测页起 `run_tool.py`；运行页看实时日志、截图和报告。
+- **key 单向**：只存在配置文件里，经子进程环境变量下传；`/api/config` 只返回 `configured` 与末四位，job 记录、`argv`、日志都不含原文。
+- **本地安全边界**：只绑 `127.0.0.1`，每个写请求校验一次性 token 和 Host/Origin（防 DNS rebinding / CSRF），文件下载限定在 `runs/` 内。
+- **不替代方法**：工作台只起进程、收产物；报告、审计、判分仍由 `wt.py report|audit` 与 `grade.py` 完成，产物可用命令行接手。
+- 新增 `tests/test_workbench.py`（10 条）；`verify_all.py` 增加 workbench 导入检查与 `app.js` 语法检查。
+- 修复：GUI 驱动失败时只报 `timeout waiting for workspace-popover`。`drive_qoder.py` 现在启动即探测 CDP 端口，失败直接给出 `--remote-debugging-port=9444` 的启动命令和底层原因；非 Windows 上文件夹选择器明确报错；工作台在启动 GUI 驱动前预检端口与 `websocket-client`。
+- 工作台加「环境自检」：依赖、CDP 端口、xdotool、DISPLAY、key 逐项列出并给修复命令；「安装依赖」把 `harness/requirements.txt` 装进 `workbench/.deps`（PEP 668 友好，不碰系统 Python），子进程通过 `PYTHONPATH` 继承。
+- `run_tool.py` 新增 `--driver-arg`（白名单，目前只有 `--skip-workspace`）；评测页对 Qoder 显示「工作区已手动建好」勾选项，Linux 上可绕开 Windows 文件夹选择器。
+- `cdp.py` 缺依赖时自动改用 `workbench/.deps`；调试端口连不上时只报一行可操作错误，不再抛 traceback。
+- 「安装依赖」同时安装 `office-eval/requirements.txt`（openpyxl），装完后 `python3 verify_all.py` 无需再设 `PYTHONPATH`。
+- 工作台新增「被测应用」：带 `--remote-debugging-port` 启动/重启 Qoder / Cursor / TRAE，运行中未开端口时先确认再重启，不 SIGKILL、不静默丢未保存内容。
+- 评测页对 Qoder 新增「在 Qoder 中打开任务目录」：建好 `runs/<run>/work/<task>-r1`，用 `qoder-cn -n` 打开，自动填 run id 并勾选 `--skip-workspace`，Linux 不再必须走原生文件夹选择器。
+- 适配 Qoder CN 1.37：入口文案是「新会话」而非「新的任务」；新目录会弹「是否信任此作者」模态框，驱动自动确认；发送失败时回退点 `Send message`。新增 `drive_qoder.py --check`（只读，报告 CDP/界面结构，不点击）。
+- 工作台：打开目录后校验窗口标题，假成功直接报错；Linux 上 Qoder 未勾 `--skip-workspace` 时启动前拒绝并给指引。
+- 新增 `code-eval/tools/dialogs.py`：弹窗三档（safe / blocked / unknown）。safe 自动点，blocked 与 unknown 一律不点，截图 + trace 事件后让本轮失败；驱动在启动后、输入前、空闲轮询时检查。规则是数据表，新弹窗加一行即可。
+- 工作台运行详情显示「弹窗 自动 N · 需人工 M」，从 `*.trace.jsonl` 统计。
+- 工作台驱动器预检补上 CLI：`codex` 不在 PATH 时启动前直接拒绝（之前会 1 秒后抛 `FileNotFoundError: 'codex'`）；`/api/state` 返回每个驱动器的 `available` / `why`，下拉框标灰不可用项并默认选中可用的那个。`drive_codex.py` 也改为一行可读错误。
+- 修复「打开任务目录」和「开始评测」互相打架：预建目录现在写 `.workspace.json` 标记，启动时复用；只有已跑过、已有结果或非预建目录才拦截，并给出换 run id 的提示。
+- 修复 `--driver-arg --skip-workspace` 被 argparse 当成另一个选项（`expected one argument`）：`run_tool.py` 先把这种写法规范成 `--driver-arg=...`，两种写法都能用。
+- Qoder 的工作区打开并入「开始评测」：启动时自动建目录、在 Qoder 打开并校验窗口标题，`--skip-workspace` 默认勾选；只支持一次一个任务（工作区绑定目录）。
+- `cdp.py` 新增 `--match-title`：按窗口标题选目标。`drive_qoder.py` 用任务目录名匹配，多个 Qoder 窗口并存时不再连错。
+- 跟随 v6.14 的真实桌面策略：工作台环境自检调用 `wtlib.verify_real_session()`，`DISPLAY=:1` / Xvfb / 无 seat 会话直接标红；`cdp.py` 的 `--match-title` 与真实窗口校验共存。
+- 本地补丁（与上游 v6.14 的差异）：真实桌面不再硬编码 `:0`，改为要求 `DISPLAY` 与 logind 活跃 seat 会话的 `Display` 一致（LXC/VM 里真实会话可能是 `:1`）；`wt.py preflight/shot/click/launch/agent`、`cdp.py`、`wtshot.py`、`preflight.sh` 同步，Xvfb / 无 seat 仍拒绝。安装 `xdotool` 后，CDP 的真实窗口校验可用。
+
 ## v6.14（2026-10-29，Linux 真实桌面校验）
 
 - 新增 `wtlib.verify_real_session()`：检查 loginctl 活跃会话、seat、Wayland socket 或真实 X11 output；拒绝无 seat 的容器和 Xvfb/Xephyr。

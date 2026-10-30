@@ -13,6 +13,7 @@
 
 import argparse
 import json
+import os
 import subprocess
 import sys
 import time
@@ -20,15 +21,21 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
+sys.path.insert(0, str(HERE))
+import dialogs  # noqa: E402  (same directory; rules live there)
 REPO = EVAL.parent
 CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--port", "9444"]
+MATCH_TITLE = None  # set from the task folder so several windows are not ambiguous
 EDITOR = '[contenteditable="true"]'
 APPROVE_LABELS = ("本次会话允许", "允许", "运行", "同意")
+# Qoder 1.37 renamed the entry point; keep both so older builds still work.
+NEW_TASK_LABELS = ("新的任务", "新会话", "新建任务")
+TRUST_LABELS = ("是，我信任此作者", "信任此作者")
 PS1 = REPO / "harness" / "pick-folder.ps1"
 
 
 def cdp(op, arg=None, timeout=90, check=False):
-    cmd = CDP + [op] + ([arg] if arg else [])
+    cmd = CDP + ([ "--match-title", MATCH_TITLE ] if MATCH_TITLE else []) + [op] + ([arg] if arg else [])
     p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                        errors="replace", timeout=timeout)
     if check and p.returncode != 0:
@@ -54,7 +61,14 @@ def js(source, timeout=60):
 
 def page_text():
     p = cdp("text")
-    return p.stdout if p.returncode == 0 else ""
+    if p.returncode != 0:
+        # CDP is down or websocket-client is missing; say so once instead of
+        # letting every wait_for() report "element not found".
+        detail = ((p.stderr or "") + (p.stdout or "")).strip().splitlines()
+        if detail:
+            print(f"cdp text failed: {detail[-1][:300]}", file=sys.stderr)
+        return ""
+    return p.stdout
 
 
 def log(path, event, **fields):
@@ -96,6 +110,10 @@ def wait_for(predicate, timeout, interval=1.0, label=""):
 
 
 def pick_folder(path):
+    if os.name != "nt":
+        return False, ("native folder picker is Windows-only (harness/pick-folder.ps1); "
+                       "create the workspace in Qoder by hand, then rerun with "
+                       "--skip-workspace")
     p = subprocess.run(
         ["powershell", "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", str(PS1), str(path)],
         capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
@@ -106,7 +124,7 @@ def pick_folder(path):
 def ensure_workspace(path, log_path, timeout=120):
     """Create and activate a Qoder workspace rooted at `path`."""
     text_before = page_text()
-    if path.name in text_before and "暂无任务" in text_before:
+    if path.name in text_before and ("暂无任务" in text_before or "新会话" in text_before):
         log(log_path, "workspace_exists", name=path.name)
         return True
     # The workspace chip is only clickable on the home screen, not inside a task.
@@ -124,7 +142,7 @@ def ensure_workspace(path, log_path, timeout=120):
         cdp("clickxy", f"{chip['x']},{chip['y']}")
         log(log_path, "chip_click", label=chip.get("label"), xy=f"{chip['x']},{chip['y']}")
     if not wait_for(lambda: "新建工作区" in page_text(), 10, label="workspace-popover"):
-        log(log_path, "popover_missing")
+        log(log_path, "popover_missing", text=page_text()[:300])
         return False
     click_text_exact("新建工作区")
     if not wait_for(lambda: "源文件夹" in page_text(), 15, label="new-workspace-dialog"):
@@ -144,6 +162,56 @@ def ensure_workspace(path, log_path, timeout=120):
     return ok
 
 
+def page_dialogs():
+    """Visible modal texts, used only when no rule matched."""
+    out = js("""(() => {
+      const sel = '[aria-modal="true"], .monaco-dialog-box';
+      return Array.from(document.querySelectorAll(sel))
+        .filter(e => e.offsetParent !== null)
+        .map(e => ((e.innerText || '').trim().slice(0, 160)))
+        .filter(t => t.length > 20);
+    })()""")
+    return out if isinstance(out, list) else []
+
+
+def dialog_shot(log_path):
+    path = Path(log_path).with_suffix(".dialog.png")
+    try:
+        cdp("shot", str(path), timeout=30)
+        return str(path)
+    except Exception:  # noqa: BLE001 - evidence is best effort
+        return None
+
+
+def guard_dialogs(log_path, where):
+    """Safe dialogs are handled; blocked/unknown ones stop the run with evidence."""
+    status, detail = dialogs.handle(
+        page_text, click_text_exact,
+        lambda event, **fields: log(log_path, event, **fields),
+        where=where, shot=lambda: dialog_shot(log_path), dom=page_dialogs,
+    )
+    if status == "blocked":
+        reason = detail.get("reason") or detail.get("marker")
+        extra = f"；截图 {detail['screenshot']}" if detail.get("screenshot") else ""
+        raise SystemExit(f"被弹窗挡住（{where}）：{reason}{extra}")
+    if status == "unknown":
+        raise SystemExit(f"遇到未知弹窗（{where}）：{detail.get('text', '')[:120]!r}"
+                         f"{'；截图 ' + detail['screenshot'] if detail.get('screenshot') else ''}")
+    return status
+
+
+def dismiss_trust(log_path):
+    """Qoder asks whether to trust the folder; the driver must answer it."""
+    if "信任此作者" not in page_text():
+        return True
+    for label in TRUST_LABELS:
+        if click_text_exact(label) == "clicked":
+            log(log_path, "trust_accepted", label=label)
+            return wait_for(lambda: "信任此作者" not in page_text(), 10, label="trust-dialog")
+    log(log_path, "trust_missing")
+    return False
+
+
 def editor_info():
     return js(f"""(() => {{
       const el = document.querySelector('{EDITOR}');
@@ -153,13 +221,17 @@ def editor_info():
 
 
 def new_task(log_path):
-    click_text_exact("新的任务")
+    for label in NEW_TASK_LABELS:
+        if click_text_exact(label) == "clicked":
+            log(log_path, "new_task", label=label)
+            break
     ok = wait_for(lambda: isinstance(editor_info(), dict), 20, label="editor")
     log(log_path, "new_task", ok=ok)
     return ok
 
 
 def send_prompt(prompt, log_path):
+    guard_dialogs(log_path, "before-send")
     info = editor_info()
     if not isinstance(info, dict):
         return False
@@ -194,6 +266,17 @@ def send_prompt(prompt, log_path):
     if isinstance(still, dict) and still.get("len", 0) > 20 and "正在执行中" not in current:
         cdp("key", "Enter")
         log(log_path, "resent")
+        time.sleep(2)
+        again = editor_info()
+        if isinstance(again, dict) and again.get("len", 0) > 20:
+            # Some builds need the button; Enter only inserts a newline.
+            clicked = js("""(() => {
+              const b = document.querySelector('[aria-label="Send message"], [aria-label="发送"]');
+              if (!b) return 'not found';
+              b.click();
+              return 'clicked';
+            })()""")
+            log(log_path, "send_button", result=clicked)
     return True
 
 
@@ -270,6 +353,10 @@ def wait_done(log_path, timebox, idle_s=30, debug=False):
         if seen_running and time.time() - last_change > idle_s and not running:
             log(log_path, "done_idle", approvals=approvals)
             return True, approvals
+        if not running and "正在执行中" not in current:
+            # A dialog that appears mid-run is handled here; blocked/unknown
+            # ones raise and end the attempt with a screenshot.
+            guard_dialogs(log_path, "idle")
         if debug:
             print("STATE:", current.strip()[-160:].replace("\n", " | "))
         time.sleep(2)
@@ -290,7 +377,36 @@ def main():
     ap.add_argument("--idle", type=int, default=30)
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--skip-workspace", action="store_true")
+    ap.add_argument("--check", action="store_true",
+                    help="只报告 CDP/界面结构，不点击、不发送")
     a = ap.parse_args()
+
+    global MATCH_TITLE
+    MATCH_TITLE = Path(a.workdir).name
+
+    probe = cdp("text", timeout=15)
+    if probe.returncode != 0:
+        detail = ((probe.stderr or "") + (probe.stdout or "")).strip()[-400:]
+        raise SystemExit(
+            "cannot reach Qoder CN over CDP on port 9444.\n"
+            "Start Qoder CN with --remote-debugging-port=9444 first, e.g.\n"
+            "  /usr/share/qoder-cn-ide/qoder-cn-ide --remote-debugging-port=9444\n"
+            f"detail: {detail}"
+        )
+
+    if a.check:
+        text = page_text()
+        report = {
+            "cdp": True,
+            "chars": len(text),
+            "new_task_labels": {label: label in text for label in NEW_TASK_LABELS},
+            "trust_dialog": "信任此作者" in text,
+            "editor": isinstance(editor_info(), dict),
+            "workspace_chip": Path(a.workdir).name in text,
+            "dialogs": dialogs.classify(text),
+        }
+        print(json.dumps(report, ensure_ascii=False, indent=2))
+        return 0
 
     workdir = Path(a.workdir).resolve()
     spec = json.loads((EVAL / "tasks" / f"{a.task}.json").read_text(encoding="utf-8"))
@@ -310,6 +426,10 @@ def main():
         if p.returncode != 0:
             raise SystemExit(f"prepare failed: {p.stderr}")
         print(p.stdout.strip())
+
+    if not dismiss_trust(log_path):
+        raise SystemExit("cannot dismiss the folder-trust dialog")
+    guard_dialogs(log_path, "start")
 
     before = workdir.parent / (workdir.name + ".before.json")
     if not a.skip_workspace:

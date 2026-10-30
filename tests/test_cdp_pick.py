@@ -52,6 +52,17 @@ class PickTargetTest(unittest.TestCase):
              mock.patch.object(cdp.subprocess, "run", return_value=found):
             cdp.require_real_window("Visible Check")
 
+    def test_title_match_separates_two_windows(self):
+        tabs = [
+            {"type": "page", "url": "vscode-file://vscode-app/x/workbench",
+             "title": "Qoder CN IDE"},
+            {"type": "page", "url": "vscode-file://vscode-app/x/workbench",
+             "title": "L1-split-bill-r1 - Qoder CN IDE"},
+        ]
+        picked = cdp.pick_target(tabs, title_match="L1-split-bill-r1")
+        self.assertIn("L1-split-bill-r1", picked["title"])
+        self.assertIsNone(cdp.pick_target(tabs, title_match="not-there"))
+
     def test_no_target_returns_none(self):
         self.assertIsNone(cdp.pick_target([], None))
         self.assertIsNone(cdp.pick_target(

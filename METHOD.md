@@ -1,6 +1,6 @@
-# 走查方法 v6.14
+# 走查方法 v6.15
 
-- 方法版本：v6.14
+- 方法版本：v6.15
 - 最后更新：2026-10-29
 - 变更记录：见 [`CHANGELOG.md`](CHANGELOG.md)
 
@@ -477,3 +477,13 @@ python harness/xlsx_audit.py runs/<run>/<book>.xlsx --sheet "<sheet>" --expect-i
 - Qoder 在阶段之间会压缩上下文（“正在压缩...”），历史工具细节只剩摘要；关键约束写进 STATUS/SPEC，验收以仓库状态为准，不以对话摘要为准。
 - Trae 每个变更批次会停在“全部保留”等人工确认；无人值守驱动要检测这个状态并点确认，否则会把“等人”误判成“停滞”。
 
+## 16. 工作台（2026-10-30 增补）
+
+`workbench/` 是 harness 的本地页面外壳，不是新方法。它只做三件事：存配置、起进程、收产物。
+
+- **key 单向**：只写进 `~/.config/tool-walkthrough/config.json`（`0600`），经子进程环境变量传给 `wt.py agent`；页面只显示末四位，`control.json`、job 记录和日志里不能出现原文。
+- **不替方法做决定**：工作台不生成任务矩阵、不写报告、不下严重度结论；它调的是 `wt.py agent` 和 `run_tool.py`，产物仍在 `runs/<run>/`。
+- **沿用真实桌面策略**：环境自检会调用 `wtlib.verify_real_session()`；`DISPLAY=:1`、Xvfb、无 seat 的会话直接标红，不让人跑到一半才发现。
+- **弹窗三档**：safe 自动点、blocked 不点、unknown 停并截图；规则在 `code-eval/tools/dialogs.py`，是数据表。
+- **停要停干净**：每个 job 是独立进程组，停止向整个组发 SIGTERM，避免子进程残留成下一轮的假服务。
+- **产物可接手**：同一个 run 目录可以继续用 `wt.py audit`、`wt.py report`、`grade.py` 处理。

@@ -64,16 +64,24 @@ def check_node():
     if not node:
         return None
     total = 0.0
-    for rel in ("harness/webapp_accept.mjs", "code-eval/dashboard/app.js"):
+    for rel in ("harness/webapp_accept.mjs", "code-eval/dashboard/app.js",
+                "workbench/web/app.js"):
         rc, seconds, detail = run([node, "--check", rel], 60)
         total += seconds
         if rc != 0:
             return rc, round(total, 1), f"{rel}: {detail}"
-    return 0, round(total, 1), "webapp_accept.mjs + dashboard/app.js"
+    return 0, round(total, 1), "webapp_accept.mjs + dashboard/app.js + workbench/app.js"
+
+
+def check_workbench():
+    code = ("import sys; sys.path.insert(0, 'workbench'); import config, jobs; "
+            "assert 'api_key' not in config.public(); print('config + jobs import ok')")
+    return run([PY, "-c", code], 60)
 
 
 def check_compile():
-    return run([PY, "-m", "compileall", "-q", "harness", "code-eval/tools", "office-eval/tools"], 120)
+    return run([PY, "-m", "compileall", "-q", "harness", "code-eval/tools",
+                "office-eval/tools", "workbench"], 120)
 
 
 def main():
@@ -88,6 +96,7 @@ def main():
         ("wt.py help", check_help),
         ("task specs", check_tasks),
         ("python compile", check_compile),
+        ("workbench import", check_workbench),
         ("node syntax", check_node),
     ]
     if not a.quick:

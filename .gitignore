@@ -7,3 +7,4 @@ runs/
 debug.log
 .dsh-office-*
 .selftest-tmp/
+workbench/.deps/

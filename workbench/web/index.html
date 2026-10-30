@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="wb-token" content="{{TOKEN}}">
+<title>走查工作台 · Tool Walkthrough</title>
+<link rel="stylesheet" href="styles.css">
+</head>
+<body>
+<div class="app">
+  <aside class="rail">
+    <a class="brand" href="#/settings" aria-label="走查工作台">
+      <span class="mark">走</span>
+      <span><strong>走查工作台</strong><small>tool-walkthrough</small></span>
+    </a>
+    <nav class="nav" id="nav">
+      <a href="#/settings" data-route="settings"><span>设置</span><em>01</em></a>
+      <a href="#/walkthrough" data-route="walkthrough"><span>走查</span><em>02</em></a>
+      <a href="#/eval" data-route="eval"><span>评测</span><em>03</em></a>
+      <a href="#/jobs" data-route="jobs"><span>运行</span><em>04</em></a>
+    </nav>
+    <div class="rail-foot">
+      <div class="dot-line"><i id="llm-dot"></i> <span id="llm-foot">未配置 key</span></div>
+      <div class="tiny mono" id="cfg-path">—</div>
+      <div class="tiny">本地单用户 · 只绑 127.0.0.1</div>
+    </div>
+  </aside>
+
+  <main>
+    <header class="topbar">
+      <div class="crumbs" id="crumbs">设置</div>
+      <div class="top-actions">
+        <span class="pill" id="mode-pill">本地</span>
+        <button class="ghost" id="refresh">刷新</button>
+      </div>
+    </header>
+
+    <section id="view" class="view" aria-live="polite"></section>
+
+    <footer class="foot">
+      配置文件 <code id="foot-cfg">—</code> · 产物在 <code>runs/</code> · 本页不显示 key 原文
+    </footer>
+  </main>
+</div>
+<div id="toast" class="toast" role="status"></div>
+<script src="app.js"></script>
+</body>
+</html>

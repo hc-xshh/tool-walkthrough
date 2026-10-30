@@ -15,8 +15,8 @@ One entry point for the operations that differ by OS:
   python3 harness/wt.py coverage runs/2026-10-19-tool
   python3 harness/wt.py evidence --strict runs/2026-10-19-tool
 
-Linux uses X11 tooling (ffmpeg/xdotool). Only the real desktop :0 is
-supported; :98/:99/Xvfb are rejected. macOS uses screencapture and
+Linux uses X11 tooling (ffmpeg/xdotool). Only the active, seated desktop
+session is supported; its display may be :1 in a container/VM. Xvfb is rejected. macOS uses screencapture and
 cliclick (or AppleScript). Windows uses PowerShell/.NET and ctypes.
 CDP stays in cdp.py and works on all three.
 
@@ -68,10 +68,6 @@ def launch_env(base=None):
 def require_real_display(disp):
     """Reject virtual displays and prove the Linux session is a real desktop."""
     value = str(disp or ":0").strip()
-    if value.split(".")[0] != ":0":
-        raise SystemExit(
-            f"virtual displays are disabled ({value}); use the real desktop DISPLAY=:0"
-        )
     verify_real_session(value)
     return value
 
@@ -139,17 +135,14 @@ def cmd_preflight(a):
         for b in ("ffmpeg", "xdotool", "xdpyinfo"):
             p = which_any([b])
             say(b, bool(p), p or "missing (Linux desktop walkthroughs)", warn_only=True)
-        disp = a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
-        if str(disp).split(".")[0] != ":0":
-            say("real session", False, f"virtual displays are disabled ({disp}); use :0")
+        disp = (a.display or os.environ.get("WALKTHROUGH_DISPLAY")
+                or os.environ.get("DISPLAY") or prof.get("display") or ":0")
+        try:
+            info = verify_real_session(disp)
+            say("real session", True, f"{info['type']}, seat={info['seat']}")
+        except SystemExit as exc:
+            say("real session", False, str(exc))
             rc = 1
-        else:
-            try:
-                info = verify_real_session(disp)
-                say("real session", True, f"{info['type']}, seat={info['seat']}")
-            except SystemExit as exc:
-                say("real session", False, str(exc))
-                rc = 1
         xdpy = which_any(["xdpyinfo"])
         check_env = dict(os.environ)
         auth_hint = ""
@@ -262,7 +255,7 @@ def cmd_shot(a):
     out = Path(a.out).expanduser().resolve()
     out.parent.mkdir(parents=True, exist_ok=True)
     disp = require_real_display(
-        a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+        a.display or os.environ.get("WALKTHROUGH_DISPLAY") or os.environ.get("DISPLAY") or prof.get("display") or ":0"
     )
     geom = a.geometry or prof.get("geometry") or ""
 
@@ -310,7 +303,7 @@ def cmd_click(a):
 
     prof = profile(a)
     disp = require_real_display(
-        a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+        a.display or os.environ.get("WALKTHROUGH_DISPLAY") or os.environ.get("DISPLAY") or prof.get("display") or ":0"
     )
     x, y = float(a.x), float(a.y)
     note = ""
@@ -593,7 +586,7 @@ def cmd_launch(a):
         # dialogs are part of what an experience walkthrough is judging.
         env.update(
             DISPLAY=require_real_display(
-                a.display or prof.get("display") or os.environ.get("WALKTHROUGH_DISPLAY", ":0")
+                a.display or os.environ.get("WALKTHROUGH_DISPLAY") or os.environ.get("DISPLAY") or prof.get("display") or ":0"
             ),
         )
         with open(log, "wb") as fh:

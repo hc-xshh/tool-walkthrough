@@ -23,10 +23,26 @@ class RealSessionTest(unittest.TestCase):
         wtlib._REAL_SESSION.clear()
         self.addCleanup(wtlib._REAL_SESSION.clear)
 
-    def test_virtual_display_is_rejected_before_loginctl(self):
-        with self.assertRaises(SystemExit) as cm:
-            wtlib.verify_real_session(":98")
-        self.assertIn("virtual displays are disabled", str(cm.exception))
+    def test_display_must_match_the_seated_session(self):
+        with mock.patch.object(wtlib, "active_session", return_value=(
+                "1", {"Type": "x11", "Active": "yes", "Seat": "seat0", "Display": ":1"})):
+            with self.assertRaises(SystemExit) as cm:
+                wtlib.verify_real_session(":98", refresh=True)
+        message = str(cm.exception)
+        self.assertIn("not the active session's display", message)
+        self.assertIn(":1", message)
+
+    def test_seated_session_on_another_display_passes(self):
+        def fake_run(cmd, **kwargs):
+            return _proc("DisplayPort-0 connected primary 2560x1288+0+0\n")
+
+        with mock.patch.object(wtlib, "active_session", return_value=(
+                "1", {"Type": "x11", "Active": "yes", "Seat": "seat0", "Display": ":1"})), \
+             mock.patch.object(wtlib, "which_any", side_effect=lambda names: "/usr/bin/" + names[0]), \
+             mock.patch.object(wtlib.subprocess, "run", side_effect=fake_run):
+            info = wtlib.verify_real_session(":1", refresh=True)
+        self.assertEqual(info["display"], ":1")
+        self.assertEqual(info["seat"], "seat0")
 
     def test_wayland_session_requires_a_real_socket(self):
         with tempfile.TemporaryDirectory() as tmp:

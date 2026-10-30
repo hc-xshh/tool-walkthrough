@@ -18,6 +18,21 @@ HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
 
 
+def normalize_argv(argv):
+    """Let `--driver-arg --skip-workspace` work: argparse treats a value that
+    starts with a dash as another option, so rewrite it to the = form."""
+    out = []
+    i = 0
+    while i < len(argv):
+        if argv[i] == "--driver-arg" and i + 1 < len(argv) and argv[i + 1].startswith("-"):
+            out.append(f"--driver-arg={argv[i + 1]}")
+            i += 2
+        else:
+            out.append(argv[i])
+            i += 1
+    return out
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--driver", default=None, help="drive_*.py 文件名或路径")
@@ -45,8 +60,11 @@ def main():
     ap.add_argument("--only-missing", action="store_true")
     ap.add_argument("--timebox-extra", type=int, default=180)
     ap.add_argument("--review", action="store_true",
-                    help="每次尝试后跑 review.py（Alibaba Open Code Review）");
-    a = ap.parse_args()
+                    help="每次尝试后跑 review.py（Alibaba Open Code Review）")
+    ap.add_argument("--driver-arg", action="append", default=[],
+                    choices=["--skip-workspace"],
+                    help="透传给 driver 的白名单参数（目前只有 --skip-workspace）");
+    a = ap.parse_args(normalize_argv(sys.argv[1:]))
 
     if a.preflight:
         pf = Path(a.preflight).expanduser().resolve()
@@ -150,6 +168,7 @@ def main():
                 cmd += ["--idle", str(spec["idle_s"])]
             if spec.get("max_rounds"):
                 cmd += ["--max-rounds", str(spec["max_rounds"])]
+            cmd += a.driver_arg
             print(f"=== {task} r{rep} start ===", flush=True)
             started = time.time()
             try:
