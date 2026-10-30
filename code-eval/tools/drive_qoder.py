@@ -57,6 +57,14 @@ def click_aria(label):
 
 
 def click_text_exact(label):
+    """Click by label with the real pointer; JS .click() only as a fallback.
+
+    Qoder's Monaco dialogs (folder trust, workspace prompts) ignore synthetic
+    DOM clicks: the call reports success, the modal stays up, and the composer
+    underneath stays covered. `cdp.py clickel` dispatches real mouse events.
+    """
+    if CDP.run("clickel", label, timeout=60).returncode == 0:
+        return "clicked"
     return CDP.js(f"""(() => {{
       const els = Array.from(document.querySelectorAll('button,div,span,a,li'))
         .filter(e => e.offsetParent !== null && (e.innerText || '').trim() === {json.dumps(label)});
@@ -159,15 +167,28 @@ def guard_dialogs(log_path, where):
     return status
 
 
-def dismiss_trust(log_path):
-    """Qoder asks whether to trust the folder; the driver must answer it."""
-    if "信任此作者" not in page_text():
-        return True
-    for label in TRUST_LABELS:
-        if click_text_exact(label) == "clicked":
-            log(log_path, "trust_accepted", label=label)
-            return wait_for(lambda: "信任此作者" not in page_text(), 10, label="trust-dialog")
-    log(log_path, "trust_missing")
+def dismiss_trust(log_path, attempts=3):
+    """Answer Qoder's folder-trust prompt, and verify it really closed.
+
+    A click that "succeeds" while the modal stays up is worse than no click:
+    the run then types into the backdrop. Every attempt re-reads the page and
+    retries with a real pointer click.
+    """
+    for attempt in range(1, attempts + 1):
+        if "信任此作者" not in page_text():
+            return True
+        clicked = None
+        for label in TRUST_LABELS:
+            if click_text_exact(label) == "clicked":
+                clicked = label
+                break
+        if not clicked:
+            log(log_path, "trust_missing", attempt=attempt)
+            return False
+        log(log_path, "trust_accepted", label=clicked, attempt=attempt)
+        if wait_for(lambda: "信任此作者" not in page_text(), 10, label="trust-dialog"):
+            return True
+    log(log_path, "trust_stuck")
     return False
 
 
@@ -176,6 +197,19 @@ def editor_info():
       const el = document.querySelector('{EDITOR}');
       if (!el) return null;
       return {{len: (el.innerText || '').length}};
+    }})()""")
+
+
+def editor_rect():
+    """Composer centre, or '__covered__' when a modal sits on top of it."""
+    return CDP.js(f"""(() => {{
+      const el = document.querySelector('{EDITOR}');
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      if (r.width < 40 || r.height < 10) return null;
+      const hit = document.elementFromPoint(r.x + r.width/2, r.y + r.height/2);
+      if (!(hit === el || el.contains(hit))) return '__covered__';
+      return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}};
     }})()""")
 
 
@@ -189,26 +223,42 @@ def new_task(log_path):
     return ok
 
 
-def send_prompt(prompt, log_path):
-    guard_dialogs(log_path, "before-send")
-    info = editor_info()
-    if not isinstance(info, dict):
-        return False
-    rect = CDP.js(f"""(() => {{
-      const el = document.querySelector('{EDITOR}');
-      const r = el.getBoundingClientRect();
-      return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}};
-    }})()""")
-    if isinstance(rect, dict):
-        CDP.run("clickxy", f"{rect['x']},{rect['y']}")
-        time.sleep(0.3)
+def fill_editor(prompt, log_path):
+    """Click the composer, clear it, type `prompt`; returns the inserted length."""
+    rect = editor_rect()
+    if rect == "__covered__":
+        # A modal (folder trust, quota, update) is over the composer. Clear it
+        # instead of typing into the backdrop.
+        guard_dialogs(log_path, "composer-covered")
+        rect = editor_rect()
+    if rect == "__covered__":
+        log(log_path, "composer_covered")
+        return 0
+    if not isinstance(rect, dict):
+        log(log_path, "composer_missing")
+        return 0
+    CDP.run("clickxy", f"{rect['x']},{rect['y']}")
+    time.sleep(0.3)
     CDP.run("keycombo", "ctrl+a")
     CDP.run("key", "Backspace")
     time.sleep(0.2)
     CDP.run("type", prompt, timeout=60)
     time.sleep(0.5)
     inserted = editor_info()
-    got = inserted.get("len", 0) if isinstance(inserted, dict) else 0
+    return inserted.get("len", 0) if isinstance(inserted, dict) else 0
+
+
+def send_prompt(prompt, log_path):
+    guard_dialogs(log_path, "before-send")
+    if not isinstance(editor_info(), dict):
+        return False
+    got = fill_editor(prompt, log_path)
+    if got < len(prompt) * 0.6:
+        # The first insert can land nowhere while the window is still
+        # restoring; one retry covers that without masking a changed selector.
+        log(log_path, "insert_retry", got=got, want=len(prompt))
+        time.sleep(1.5)
+        got = fill_editor(prompt, log_path)
     if got < len(prompt) * 0.6:
         log(log_path, "insert_failed", got=got, want=len(prompt))
         return False
