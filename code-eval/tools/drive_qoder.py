@@ -27,11 +27,27 @@ from driver_core import CDP_SCRIPT, Cdp, log, wait_for  # noqa: E402
 
 CDP = Cdp([sys.executable, str(CDP_SCRIPT), "--port", "9444"], "_qoder_tmp.js")
 EDITOR = '[contenteditable="true"]'
-APPROVE_LABELS = ("本次会话允许", "允许", "运行", "同意")
+APPROVE_LABELS = ("本次会话允许", "允许", "运行", "同意", "接受")
+# "接受" is also the label on terms/licence dialogs, which are not ours to
+# accept. Only treat it as an approval when the page asks to run a command.
+APPROVE_CONTEXT = ("终端运行", "运行命令", "执行命令", "自动执行")
+APPROVE_GATED = tuple(label for label in APPROVE_LABELS if label != "接受")
 # Qoder 1.37 renamed the entry point; keep both so older builds still work.
 NEW_TASK_LABELS = ("新的任务", "新会话", "新建任务")
 TRUST_LABELS = ("是，我信任此作者", "信任此作者")
 PS1 = CDP_SCRIPT.parent / "pick-folder.ps1"
+
+
+def approval_labels(text):
+    """Which labels may be clicked on this page.
+
+    "接受" is a plain confirmation on Qoder's terminal-run prompt ("终端运行 /
+    拒绝 / 接受") but also on terms dialogs, so it is only offered when the page
+    actually asks about running a command.
+    """
+    if any(marker in text for marker in APPROVE_CONTEXT):
+        return APPROVE_LABELS
+    return APPROVE_GATED
 
 
 def page_text():
@@ -320,6 +336,9 @@ def approve_native(label):
 
 def wait_done(log_path, timebox, idle_s=30, debug=False):
     deadline = time.time() + timebox
+    started = time.time()
+    last_report = started
+    warned_unmatched = False
     seen_running = False
     stable = 0
     last = ""
@@ -332,13 +351,19 @@ def wait_done(log_path, timebox, idle_s=30, debug=False):
         running = "正在执行中" in current
         if running:
             seen_running = True
-        label = CDP.pending_label(APPROVE_LABELS)
+        label = CDP.pending_label(approval_labels(current))
         if label:
             approve_native(label)
             approvals += 1
             log(log_path, "approve", label=label)
             time.sleep(2)
             continue
+        if "拒绝" in current and "接受" in current and not warned_unmatched:
+            # A confirmation the driver does not recognise: say so once instead
+            # of sitting here silently until the timebox runs out.
+            warned_unmatched = True
+            print("[qoder] 界面上有未识别的确认框（拒绝/接受），可能在等人点", flush=True)
+            log(log_path, "approval_unrecognised")
         if seen_running and not running and "由 AI 生成" in current:
             stable += 1
             if stable >= 3:
@@ -353,6 +378,11 @@ def wait_done(log_path, timebox, idle_s=30, debug=False):
             # A dialog that appears mid-run is handled here; blocked/unknown
             # ones raise and end the attempt with a screenshot.
             guard_dialogs(log_path, "idle")
+        if time.time() - last_report > 60:
+            last_report = time.time()
+            print(f"[qoder] 等待中 {int(time.time() - started)}s"
+                  f"（界面 {int(time.time() - last_change)}s 无变化，approvals={approvals}）",
+                  flush=True)
         if debug:
             print("STATE:", current.strip()[-160:].replace("\n", " | "))
         time.sleep(2)
