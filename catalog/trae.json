@@ -1,0 +1,87 @@
+{
+  "id": "trae",
+  "name": "TRAE",
+  "vendor": "ByteDance",
+  "positioning": "字节跳动的 AI 原生 IDE，提供 IDE 和 SOLO 两种模式，并有插件、CLI 和工作台。",
+  "aliases": [
+    "Trae",
+    "TRAE CN",
+    "TraeWork",
+    "SOLO"
+  ],
+  "category": [
+    "ai-ide",
+    "coding",
+    "agent"
+  ],
+  "homepage": "https://www.trae.ai/",
+  "docs": "https://docs.volcengine.com/docs/TRAECN/ProductOverview?lang=zh",
+  "sources": [
+    {
+      "url": "https://docs.volcengine.com/docs/TRAECN/ProductOverview?lang=zh",
+      "title": "TRAE 企业版概述 - 火山引擎",
+      "verified_at": "2026-10-30"
+    }
+  ],
+  "products": [
+    {
+      "id": "trae-ide",
+      "name": "TRAE IDE",
+      "form": "ide",
+      "positioning": "AI IDE with IDE mode and SOLO agent mode.",
+      "surfaces": [
+        {
+          "id": "gui",
+          "label": "IDE GUI",
+          "kind": "gui",
+          "app_id": "trae",
+          "driver_id": "drive_trae.py"
+        }
+      ]
+    },
+    {
+      "id": "trae-cli",
+      "name": "TRAE CLI",
+      "form": "cli",
+      "positioning": "Code agent in the terminal.",
+      "surfaces": [
+        {
+          "id": "cli",
+          "label": "Terminal",
+          "kind": "cli"
+        }
+      ]
+    },
+    {
+      "id": "trae-plugin",
+      "name": "TRAE Plugin",
+      "form": "plugin",
+      "positioning": "AI coding capabilities inside mainstream IDEs.",
+      "surfaces": [
+        {
+          "id": "plugin",
+          "label": "IDE plugin",
+          "kind": "plugin"
+        }
+      ]
+    },
+    {
+      "id": "traework",
+      "name": "TraeWork",
+      "form": "work",
+      "positioning": "AI-native work surface across web, desktop, and mobile.",
+      "surfaces": [
+        {
+          "id": "web",
+          "label": "Web",
+          "kind": "web"
+        },
+        {
+          "id": "desktop",
+          "label": "Desktop",
+          "kind": "desktop"
+        }
+      ]
+    }
+  ]
+}

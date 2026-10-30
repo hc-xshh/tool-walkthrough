@@ -11,7 +11,8 @@
 
 | 路径 | 内容 |
 |---|---|
-| `docs/METHOD.md` | 方法本体：7 步流程（含页面地图）、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
+| `docs/METHOD.md` | 走查方法本体：7 步流程（含页面地图）、任务设计、0–4 严重度、发现写法、报告结构、质量清单 |
+| `docs/DIMENSIONS.md` | 能力画像：维度 / 场景 / 运行 / 报告四段式，数据模型、覆盖求解、迁移映射 |
 | `templates/tool-profile.md` | 走查前的工具调研模板（事实卡 + 官方声明表） |
 | `templates/ui-map.md` | 页面地图模板（控件清单 + 归属任务 / 不测原因） |
 | `templates/task-plan.md` | 任务矩阵模板（任务 / 成功标准 / 覆盖控件 / 结果 / 证据） |
@@ -22,8 +23,9 @@
 | `start.sh` | 一条命令起工作台：按端口探测自动停掉旧实例（不用知道它在哪个终端）、挑可用端口、启动；`--reuse` 只复用不重启，`--force` 有任务在跑也重启 |
 | `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
+| `catalog/` | 只读产品谱系：一个 JSON 一个家族，记录公司、定位、产品线和可测面；前端直接展示，新增家族不改代码 |
 | `agent-kit/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
-| `workbench/` | 本地工作台：设置页配 endpoint / 模型 / key + 环境自检；走查页起 `wt.py agent`；评测页起 `run_tool.py`；运行页看日志、截图与产物 |
+| `workbench/` | 本地工作台：配置页配大模型 API Key、网络搜索和基础环境自检；接入页展示只读产品谱系、一句话加产品；维度页管维度、场景页管场景；运行页按「产品 × 维度」采集；报告页出矩阵并导出；日志页看结果与产物 |
 
 ## 不包含什么
 
@@ -108,11 +110,13 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 
 `start.sh` 只做启动前检查，真正的服务还是 `python3 workbench/server.py`（Windows 直接跑这条）。
 
-- 设置页把 endpoint / 模型 / key 写进 `~/.config/tool-walkthrough/config.json`（`0600`）；浏览器只拿回“是否已配置”和末四位。
-- 走查页启动 `harness/wt.py agent`；评测页启动 `code-eval/tools/run_tool.py`（外部 CLI 用各自的登录态，不读这个 key）。
-- 环境自检会检查真实桌面会话、CDP 依赖、调试端口、`xdotool`、key；缺依赖可以一键装进 `workbench/.deps`。
-- 运行页看实时日志、截图、`agent-summary.md` / `findings.json`；产物仍在 `runs/<run>/`，命令行工具照样能接手。
+- 配置页把模型 endpoint / 模型 / key、以及可选的网络搜索 provider/key 写进 `~/.config/tool-walkthrough/config.json`（`0600`）；浏览器只拿回“是否已配置”和末四位。搜索支持 DeepSeek / Exa / Tavily / Brave / Perplexity，模型也是 DeepSeek 时默认复用模型 key。
+- 接入页先展示固定产品谱系（Qoder / Trae / Cursor / Codex，来自 `catalog/*.json`，只读），顶部可以说一句「加上 Kimi Work」自动搜索、探测本机安装并生成产品卡；「连接与驱动」表说明本机哪些能走查 / 能评测。
+- 维度页定义「看什么」（维度 + 指标），场景页定义「做什么事」（一个场景通常是一个复杂任务，可带多轮对话，照到多个维度）；运行页选一个场景、勾多个产品，顺序跑完再对比；报告页按维度 × 产品出矩阵。口径见 [`docs/DIMENSIONS.md`](docs/DIMENSIONS.md)。
+- 配置页的基础环境自检只检查真实桌面会话、CDP 依赖、`xdotool`；被测应用端口和驱动状态在接入页，key 在配置表单里。缺依赖可以一键装进 `workbench/.deps`。
+- 日志页先看结果概览（`summary.json` / `findings.json`），再看日志、截图和分组后的产物；产物仍在 `runs/<run>/`，命令行工具照样能接手。
 - 只绑 `127.0.0.1`，写请求校验一次性 token 和 Host/Origin。
+- 网络搜索是可选配置：没有 key 时不联网、也没有爬虫兜底；DeepSeek 复用模型 key，其他 provider 需要单独 key。产品谱系和现有走查/评测不受影响。
 
 > 走查后端沿用 v6.14 的真实桌面策略：`DISPLAY=:0` + 活跃 session；Xvfb / `:98` 这类虚拟显示会被拒绝。
 
@@ -203,7 +207,7 @@ profile 放在 `harness/profiles/*.json`，声明 display、geometry、OCR 语�
 检查项自己有回归测试（标准库 unittest，无需安装）：
 
 ```bash
-python3 -m unittest discover -s tests -v     # 137 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注
+python3 -m unittest discover -s tests -v     # 276 个用例，覆盖 coverage / audit / CLI / 出片涂白与图注 / 自定义接入 / 搜索 provider（含 DeepSeek）/ 产品谱系 / 一句话接入
 ```
 
 一条命令跑完整健康检查（单元测试、15 个任务规格、两套自测、Node 语法、Python 编译）：

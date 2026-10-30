@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """The coding-eval driver registry.
 
-`code-eval/drivers.json` is the only place that knows which tools exist, what
-to call them, whether they attach over CDP or wrap a CLI, which port or binary
-they need, and which flags the workbench may pass them. The workbench, the
-dashboard server, and the run dashboard all derive their lists from here, so a
-new tool means one JSON entry plus its drive_*.py file — not four edits in four
-files that drift apart.
+`code-eval/drivers.json` is the built-in source of truth for which tools exist,
+what to call them, whether they attach over CDP or wrap a CLI, which port or
+binary they need, and which flags the workbench may pass them. The workbench,
+the dashboard server, and the run dashboard all derive their lists from here,
+so a built-in tool means one JSON entry plus its drive_*.py file — not four
+edits in four files that drift apart. User-added drivers live in
+`~/.config/tool-walkthrough/plugins.json` and are merged by `load()` when no
+explicit registry path is given.
 
 Entry shape:
 
@@ -23,18 +25,41 @@ Entry shape:
 from __future__ import annotations
 
 import json
+import os
 from pathlib import Path
 
 REGISTRY = Path(__file__).resolve().parent.parent / "drivers.json"
 
 
+def _plugins_path() -> Path:
+    override = os.environ.get("WT_PLUGINS")
+    if override:
+        return Path(override).expanduser()
+    base = Path(os.environ.get("XDG_CONFIG_HOME") or (Path.home() / ".config"))
+    return base / "tool-walkthrough" / "plugins.json"
+
+
+def _custom_entries() -> list[dict]:
+    """User-registered drivers live beside the workbench config, not in the repo."""
+    try:
+        data = json.loads(_plugins_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return []
+    items = data.get("drivers") if isinstance(data, dict) else None
+    if not isinstance(items, list):
+        return []
+    return [item for item in items if isinstance(item, dict) and item.get("custom")]
+
+
 def load(path: Path | None = None) -> list[dict]:
-    """Read and validate the registry; raise ValueError with the bad entry."""
+    """Read and validate the registry; custom entries are merged when no path is given."""
     source = Path(path) if path else REGISTRY
     data = json.loads(source.read_text(encoding="utf-8"))
     entries = data.get("drivers")
     if not isinstance(entries, list) or not entries:
         raise ValueError(f"{source}: 'drivers' must be a non-empty list")
+    if path is None:
+        entries = entries + _custom_entries()
 
     seen: set[str] = set()
     for entry in entries:
@@ -103,7 +128,9 @@ def state() -> list[dict]:
             "label": item["label"],
             "kind": item["kind"],
             "port": item.get("port"),
+            "command": item.get("command"),
             "features": list(item.get("features", [])),
+            "custom": bool(item.get("custom")),
         }
         for item in load()
     ]

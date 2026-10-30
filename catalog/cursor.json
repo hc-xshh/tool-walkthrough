@@ -1,0 +1,67 @@
+{
+  "id": "cursor",
+  "name": "Cursor",
+  "vendor": "Anysphere",
+  "positioning": "Anysphere 的 AI 编辑器，覆盖本地编码、CLI/agent 和云端 agent。",
+  "aliases": [
+    "Cursor",
+    "Anysphere"
+  ],
+  "category": [
+    "ai-ide",
+    "coding",
+    "agent"
+  ],
+  "homepage": "https://cursor.com/",
+  "docs": "https://cursor.com/docs",
+  "sources": [
+    {
+      "url": "https://cursor.com/docs",
+      "title": "Cursor documentation",
+      "verified_at": "2026-10-30"
+    }
+  ],
+  "products": [
+    {
+      "id": "cursor-editor",
+      "name": "Cursor Editor",
+      "form": "ide",
+      "positioning": "Editor-led coding with built-in agents.",
+      "surfaces": [
+        {
+          "id": "gui",
+          "label": "Editor GUI",
+          "kind": "gui",
+          "app_id": "cursor",
+          "driver_id": "drive_cursor.py"
+        }
+      ]
+    },
+    {
+      "id": "cursor-cli",
+      "name": "Cursor CLI",
+      "form": "cli",
+      "positioning": "Agent from the terminal.",
+      "surfaces": [
+        {
+          "id": "cli",
+          "label": "Terminal",
+          "kind": "cli"
+        }
+      ]
+    },
+    {
+      "id": "cursor-cloud",
+      "name": "Cursor Cloud",
+      "form": "cloud",
+      "positioning": "Cloud/background agents.",
+      "surfaces": [
+        {
+          "id": "cloud",
+          "label": "Cloud agents",
+          "kind": "cloud"
+        }
+      ]
+    }
+  ]
+}

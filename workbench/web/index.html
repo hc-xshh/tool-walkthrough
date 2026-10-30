@@ -4,25 +4,55 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="wb-token" content="{{TOKEN}}">
-<title>走查工作台 · Tool Walkthrough</title>
+<meta name="color-scheme" content="dark">
+<meta name="theme-color" content="#0a0e13">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23121a23'/%3E%3Ctext x='16' y='23' font-size='19' text-anchor='middle' fill='%236ee7a8' font-family='sans-serif'%3E%E8%B5%B0%3C/text%3E%3C/svg%3E">
+<title>能力工作台 · Tool Walkthrough</title>
 <link rel="stylesheet" href="styles.css">
 </head>
 <body>
+<a class="skip" href="#view">跳到主内容</a>
 <div class="app">
   <aside class="rail">
-    <a class="brand" href="#/settings" aria-label="走查工作台">
-      <span class="mark">走</span>
-      <span><strong>走查工作台</strong><small>tool-walkthrough</small></span>
+    <a class="brand" href="#/config" aria-label="能力工作台首页">
+      <span class="mark" aria-hidden="true">走</span>
+      <span class="brand-text"><strong>能力工作台</strong><small>tool-walkthrough</small></span>
     </a>
-    <nav class="nav" id="nav">
-      <a href="#/settings" data-route="settings"><span>设置</span><em>01</em></a>
-      <a href="#/walkthrough" data-route="walkthrough"><span>走查</span><em>02</em></a>
-      <a href="#/eval" data-route="eval"><span>评测</span><em>03</em></a>
-      <a href="#/jobs" data-route="jobs"><span>运行</span><em>04</em></a>
+    <nav class="nav" id="nav" aria-label="主导航">
+      <a href="#/plugins" data-route="plugins">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 3v5M15 3v5M7 8h10v3a5 5 0 0 1-10 0Z"/><path d="M12 16v5"/></svg>
+        <span>接入</span>
+      </a>
+      <a href="#/dimensions" data-route="dimensions">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/><circle cx="8" cy="7" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="10" cy="17" r="1.6"/></svg>
+        <span>维度</span>
+      </a>
+      <a href="#/scenarios" data-route="scenarios">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h10"/><circle cx="19" cy="18" r="1.8"/></svg>
+        <span>场景</span>
+      </a>
+      <a href="#/runs" data-route="runs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="6" cy="18" r="2"/><circle cx="18" cy="6" r="2"/><path d="M8 18h4a4 4 0 0 0 0-8h0a4 4 0 0 1 0-8h4"/></svg>
+        <span>运行</span>
+      </a>
+      <a href="#/report" data-route="report">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 19V5M4 19h16"/><path d="M8 16v-4M12 16V7M16 16v-7M20 16v-9"/></svg>
+        <span>报告</span>
+      </a>
+      <a href="#/logs" data-route="logs">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h9l3 3v15H6z"/><path d="M15 3v4h4M9 11h6M9 15h6M9 19h4"/></svg>
+        <span>日志</span>
+        <em class="nav-badge" id="nav-running" hidden>0</em>
+      </a>
+      <a href="#/config" data-route="config">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h7M15 7h5M4 17h5M13 17h7"/><circle cx="13" cy="7" r="2"/><circle cx="11" cy="17" r="2"/></svg>
+        <span>配置</span>
+      </a>
     </nav>
     <div class="rail-foot">
-      <div class="dot-line"><i id="llm-dot"></i> <span id="llm-foot">未配置 key</span></div>
-      <div class="tiny mono" id="cfg-path">—</div>
+      <div class="llm-state" id="llm-state">
+        <span class="dot-line"><i id="llm-dot"></i><span id="llm-foot">未配置 key</span></span>
+      </div>
       <div class="tiny">本地单用户 · 只绑 127.0.0.1</div>
     </div>
   </aside>
@@ -31,19 +61,29 @@
     <header class="topbar">
       <div class="crumbs" id="crumbs">设置</div>
       <div class="top-actions">
-        <span class="pill" id="mode-pill">本地</span>
-        <button class="ghost" id="refresh">刷新</button>
+        <span class="conn" id="conn"><i></i><span>已连接</span></span>
+        <a class="running-pill" id="running-pill" href="#/logs" hidden>
+          运行中 <b id="running-count">0</b>
+        </a>
+        <button type="button" class="ghost refresh" id="refresh" title="刷新数据（表单内容会保留）" aria-label="刷新数据">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.3 5.7M20 4v7h-7"/></svg>
+          <span>刷新</span>
+        </button>
       </div>
     </header>
 
-    <section id="view" class="view" aria-live="polite"></section>
+    <section id="view" class="view" tabindex="-1"><div class="empty"><span class="spinner"></span> 加载中…</div></section>
 
     <footer class="foot">
-      配置文件 <code id="foot-cfg">—</code> · 产物在 <code>runs/</code> · 本页不显示 key 原文
+      <span>产物在 <code>runs/</code></span>
+      <span>配置见「配置」页</span>
+      <span>key 只写不读</span>
     </footer>
   </main>
 </div>
-<div id="toast" class="toast" role="status"></div>
+
+<dialog id="dialog" class="modal" aria-labelledby="dlg-title"></dialog>
+<div id="toast-stack" class="toast-stack" role="status" aria-live="polite"></div>
 <script src="app.js"></script>
 </body>
 </html>

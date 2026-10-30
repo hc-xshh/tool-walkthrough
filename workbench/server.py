@@ -6,9 +6,13 @@
 
 What it does:
   * stores the LLM endpoint + key in ~/.config/tool-walkthrough/config.json (0600)
-  * starts a walkthrough run (`harness/wt.py agent`) with that key
-  * starts an eval run (`code-eval/tools/run_tool.py`) with a whitelisted driver
+  * keeps dimensions + scenarios in ~/.config/tool-walkthrough/survey.json
+  * runs one scenario against one product and writes runs/survey/<run_id>/run.json
+  * builds the dimension x product matrix and exports it as Markdown
   * streams the job log and serves the artifacts the run produced
+
+The old walkthrough / eval job kinds still exist for the CLI path; the page
+surfaces are 维度 / 运行 / 报告 (see docs/DIMENSIONS.md).
 
 What it deliberately is not: a multi-user service. It binds loopback only,
 requires a per-process token on every write, checks Host/Origin against
@@ -45,22 +49,37 @@ sys.path.insert(0, str(EVAL / "tools"))
 import drivers as driver_registry  # noqa: E402
 sys.path.insert(0, str(HERE))
 import apps  # noqa: E402
+import catalog  # noqa: E402
 import config  # noqa: E402
 import deps  # noqa: E402
+import executor  # noqa: E402
 import jobs  # noqa: E402
+import plugins  # noqa: E402
+import survey  # noqa: E402
+import websearch  # noqa: E402
 
 deps.ensure()  # workbench/.deps first, if the user installed it
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 TOKEN = secrets.token_urlsafe(24)
-LAST_OPENED: dict[str, float] = {}  # run_id -> monotonic seconds
 
 # Everything about the tool list comes from code-eval/drivers.json. GUI drivers
 # attach over CDP (a closed port fails the run 10s later with a message that
 # tells nobody anything); CLI drivers need a binary on PATH.
-DRIVERS = driver_registry.labels()
-GUI_PORTS = driver_registry.gui_ports()
-CLI_DRIVERS = driver_registry.cli_commands()
+DRIVERS: dict[str, str] = {}
+GUI_PORTS: dict[str, int] = {}
+CLI_DRIVERS: dict[str, str] = {}
+
+
+def refresh_drivers() -> None:
+    """Re-read the registry after a custom driver is added or removed."""
+    global DRIVERS, GUI_PORTS, CLI_DRIVERS
+    DRIVERS = driver_registry.labels()
+    GUI_PORTS = driver_registry.gui_ports()
+    CLI_DRIVERS = driver_registry.cli_commands()
+
+
+refresh_drivers()
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -149,10 +168,10 @@ def doctor() -> list[dict]:
     cfg = config.load()
     checks.append({
         "id": "llm-key",
-        "label": "LLM key（走查操作员）",
+        "label": "LLM key（整理产品信息）",
         "ok": bool(cfg["llm"].get("api_key")),
-        "detail": "已配置" if cfg["llm"].get("api_key") else "未配置；只影响走查页",
-        "fix": "" if cfg["llm"].get("api_key") else "到「设置」页填写 endpoint 和 key",
+        "detail": "已配置" if cfg["llm"].get("api_key") else "未配置；只影响一句话加产品",
+        "fix": "" if cfg["llm"].get("api_key") else "到「配置」页填写 endpoint 和 key",
     })
     return checks
 
@@ -167,63 +186,6 @@ def driver_available(driver: str) -> tuple[bool, str]:
         ok = port_open(port)
         return ok, ("调试端口已监听" if ok else f"调试端口 {port} 没有监听")
     return True, ""
-
-
-def desktop_problem() -> str | None:
-    """v6.14 gate: no virtual displays. Everything CDP/desktop needs :0."""
-    if sys.platform != "linux":
-        return None
-    info = real_desktop_check()
-    if info["ok"]:
-        return None
-    return f"{info['detail']}；{info['fix']}"
-
-
-def driver_problems(driver: str) -> list[str]:
-    """Reasons a driver cannot work right now, in plain language."""
-    issues = []
-    if driver in GUI_PORTS:
-        problem = desktop_problem()
-        if problem:
-            issues.append(problem)
-    binary = CLI_DRIVERS.get(driver)
-    if binary and not shutil.which(binary):
-        issues.append(f"没有找到 {binary} 命令：先安装 Codex CLI，"
-                      f"或在评测页换一个已就绪的驱动器")
-        return issues
-    port = GUI_PORTS.get(driver)
-    if not port:
-        return issues
-    if importlib.util.find_spec("websocket") is None:
-        issues.append("当前 Python 缺 websocket-client，CDP 驱动起不来："
-                      "pip install -r harness/requirements.txt（要用同一个解释器）")
-    if not port_open(port):
-        issues.append(f"{DRIVERS[driver]} 的调试端口 {port} 没有监听："
-                      f"先带 --remote-debugging-port={port} 启动被测应用，再回来跑")
-    return issues
-
-
-def tasks() -> list[dict]:
-    out = []
-    for path in sorted((EVAL / "tasks").glob("*.json")):
-        try:
-            spec = json.loads(path.read_text(encoding="utf-8"))
-        except ValueError:
-            continue
-        out.append({
-            "id": spec["id"],
-            "title": spec.get("title", spec["id"]),
-            "level": spec.get("level"),
-            "category": spec.get("category"),
-            "complexity": spec.get("complexity"),
-            "tags": spec.get("tags") or [],
-        })
-    out.sort(key=lambda t: (t.get("level") or 0, t["id"]))
-    return out
-
-
-TASKS = tasks()
-TASK_IDS = {t["id"] for t in TASKS}
 
 
 def _rel(path: Path) -> str:
@@ -257,36 +219,6 @@ def artifacts(run_dir: Path) -> list[dict]:
     return out
 
 
-def dialog_summary(run_dir: Path | None) -> dict:
-    """Count dialog events a driver wrote to its trace files."""
-    counts = {"handled": 0, "blocked": 0, "unknown": 0}
-    items: list[dict] = []
-    if run_dir and run_dir.exists():
-        for path in sorted(run_dir.rglob("*.trace.jsonl")):
-            try:
-                lines = path.read_text(encoding="utf-8", errors="replace").splitlines()
-            except OSError:
-                continue
-            for line in lines:
-                try:
-                    record = json.loads(line)
-                except ValueError:
-                    continue
-                event = str(record.get("event") or "")
-                if not event.startswith("dialog_"):
-                    continue
-                kind = event.split("_", 1)[1]
-                if kind in counts:
-                    counts[kind] += 1
-                items.append({
-                    "kind": kind,
-                    "ts": record.get("ts"),
-                    "detail": str(record.get("reason") or record.get("text")
-                                  or record.get("label") or record.get("marker") or "")[:120],
-                })
-    return {**counts, "items": items[-8:]}
-
-
 def drivers_state() -> list[dict]:
     out = []
     for item in driver_registry.state():
@@ -299,206 +231,257 @@ def build_state() -> dict:
     cfg = config.load()
     return {
         "config": config.public(cfg),
-        "tasks": TASKS,
         "drivers": drivers_state(),
         "jobs": jobs.list_jobs(20),
         "defaults": {"backend": "cdp", "port": 9339, "max_steps": 20},
         "repo": {"root": str(ROOT), "runs": str(RUNS)},
+        "plugins": {"path": str(plugins.path())},
+        "catalog": catalog.load(),
+        "discovered": plugins.list_discovered(),
     }
 
 
-def run_dir_for(run_id: str) -> Path:
-    return RUNS / run_id
-
-
-def start_walkthrough(body: dict) -> dict:
-    goal = str(body.get("goal") or "").strip()
-    if not goal:
-        raise ValueError("goal is required")
-    if len(goal) > 2000:
-        raise ValueError("goal is too long (max 2000 chars)")
-
-    backend = str(body.get("backend") or "cdp")
-    if backend not in ("cdp", "desktop"):
-        raise ValueError("backend must be cdp or desktop")
-    try:
-        port = int(body.get("port") or 9339)
-        max_steps = int(body.get("max_steps") or 20)
-    except (TypeError, ValueError):
-        raise ValueError("port and max_steps must be integers") from None
-    if not 1 <= port <= 65535:
-        raise ValueError("port out of range")
-    if not 1 <= max_steps <= 50:
-        raise ValueError("max_steps must be 1..50")
-
-    run_id = str(body.get("run_id") or "").strip() or jobs.new_id("walkthrough")
-    if not RUN_ID_RE.fullmatch(run_id):
-        raise ValueError("run_id may only contain letters, digits, dot, underscore, hyphen")
-    run_dir = run_dir_for(run_id)
-    if run_dir.exists() and any(run_dir.iterdir()):
-        raise ValueError(f"run directory already exists: {run_id}")
-
-    problem = desktop_problem()
-    if problem:
-        raise ValueError(problem)
-
+def start_discover(body: dict) -> dict:
+    query = str(body.get("query") or "").strip()
+    if not query:
+        raise ValueError("输入一个产品名，例如：加上 Kimi Work")
+    if len(query) > 200:
+        raise ValueError("产品名太长（最多 200 字符）")
     cfg = config.load()
-    if not cfg["llm"].get("api_key"):
-        raise ValueError("还没有配置 LLM key：先到「设置」页填 endpoint 和 key")
-
-    # Create the run skeleton with the harness itself, so templates and
-    # harness.json exist exactly as they would on the command line.
-    made = subprocess.run(
-        [PY, str(ROOT / "harness" / "wt.py"), "new-run", run_id],
-        cwd=str(ROOT), capture_output=True, text=True, encoding="utf-8", errors="replace",
-    )
-    if made.returncode != 0:
-        raise ValueError("new-run failed: " + (made.stderr or made.stdout).strip()[:400])
-
-    argv = [
-        PY, str(ROOT / "harness" / "wt.py"),
-        "--run", f"runs/{run_id}",
-        "agent", "--goal", goal,
-        "--backend", backend,
-        "--port", str(port),
-        "--max-steps", str(max_steps),
-    ]
-    if body.get("dry_run"):
-        argv.append("--dry-run")
-    if body.get("ocr") and backend == "desktop":
-        argv.append("--ocr")
-    display = str(body.get("display") or "").strip()
-    if display and backend == "desktop":
-        argv += ["--display", display]
-
-    title = goal.splitlines()[0][:80]
+    if not config.effective_search_key(cfg):
+        raise ValueError("网络搜索还没有可用的 key；先到「配置 → 网络搜索」配置 provider")
+    job_id = jobs.new_id("discover")
+    out = RUNS / "workbench" / "discover" / f"{job_id}.json"
+    title = query if query.startswith(("加上", "添加", "接入", "加个", "新增")) else f"加上 {query}"
+    argv = [PY, str(HERE / "discover.py"), "--query", query, "--out", str(out)]
     return jobs.start(
-        kind="walkthrough", title=title, argv=argv,
+        kind="discover", title=title, argv=argv,
         env=deps.annotate(config.child_env(cfg)), cwd=ROOT,
-        meta={"goal": goal, "backend": backend, "port": port,
-              "max_steps": max_steps, "dry_run": bool(body.get("dry_run"))},
-        run_dir=run_dir, job_id=run_id,
+        meta={"query": query, "out": str(out)},
     )
 
 
-def run_dir_blocker(run_id: str) -> str | None:
-    """None when the run directory may be used.
+# ------------------------------------------------------- survey (dimensions)
 
-    A directory created by `open_workspace` (marker file, no job, no results)
-    is meant to be reused by the following start; anything else is a collision.
-    """
-    run_dir = RUNS / run_id
-    if not run_dir.exists() or not any(run_dir.iterdir()):
-        return None
-    if (jobs.JOBS / f"{run_id}.json").exists():
-        return f"run {run_id} 已经跑过；换一个 run id 再试"
-    results = run_dir / "results"
-    if results.exists() and any(results.iterdir()):
-        return f"run {run_id} 下已经有结果；换一个 run id 再试"
-    if (run_dir / ".workspace.json").exists():
-        return None
-    # Directories prepared before the marker existed: only a work/ skeleton.
-    entries = {item.name for item in run_dir.iterdir()}
-    if entries <= {"work"} and (run_dir / "work").is_dir():
-        return None
-    return f"目录 runs/{run_id} 已存在且不是工作台预建的；换一个 run id"
+def product_options() -> list[dict]:
+    """Flatten the read-only catalog into pickable products."""
+    out = []
+    for family in (catalog.load().get("families") or []):
+        for product in family.get("products") or []:
+            app_id = next((surface.get("app_id") for surface
+                           in (product.get("surfaces") or []) if surface.get("app_id")), "")
+            adapter = executor.adapter_for({"id": product.get("id")})
+            runnable, why = adapter.available() if adapter else (False, "这个产品还不能自动体验")
+            cli_installed = bool(adapter and runnable)
+            if runnable and adapter is not None:
+                problem = adapter.preflight()
+                if problem:
+                    runnable, why = False, problem
+            out.append({
+                "id": product.get("id"),
+                "app_id": app_id,
+                "runnable": runnable,
+                "why": why,
+                "cli_installed": cli_installed,
+                "name": product.get("name"),
+                "family": family.get("name"),
+                "family_id": family.get("id"),
+                "vendor": family.get("vendor"),
+                "form": product.get("form"),
+                "homepage": family.get("homepage"),
+            })
+    return out
 
 
-def open_workspace(body: dict) -> dict:
-    """Create the first task's workdir and open it in Qoder, so no native dialog."""
-    task = str(body.get("task") or "").strip()
-    if task not in TASK_IDS:
-        raise ValueError("unknown task: " + (task or "(empty)"))
-    run_id = str(body.get("run_id") or "").strip() or jobs.new_id("eval")
+def survey_state() -> dict:
+    data = survey.load()
+    counts = {d["id"]: 0 for d in data["dimensions"]}
+    for scenario in data["scenarios"]:
+        for dim_id in scenario["dimensions"]:
+            if dim_id in counts:
+                counts[dim_id] += 1
+    runs = survey.list_runs(RUNS, limit=50)
+    measured: dict[str, int] = {}
+    for run in runs:
+        for measure in run.get("measurements") or []:
+            dim_id = str(measure.get("dimension") or "")
+            if dim_id:
+                measured[dim_id] = measured.get(dim_id, 0) + 1
+    return {
+        "dimensions": data["dimensions"],
+        "scenarios": data["scenarios"],
+        "coverage": counts,
+        "measured": measured,
+        "runs": runs,
+        "products": product_options(),
+        "store": str(survey.store_path()),
+    }
+
+
+def _product(body: dict) -> dict:
+    product = body.get("product")
+    if not isinstance(product, dict):
+        raise ValueError("先选一个产品")
+    product_id = str(product.get("id") or "").strip()
+    if not product_id:
+        raise ValueError("先选一个产品")
+    return {
+        "id": product_id,
+        "app_id": str(product.get("app_id") or "").strip(),
+        "name": str(product.get("name") or product_id).strip(),
+        "family": str(product.get("family") or "").strip(),
+        "version": str(product.get("version") or "").strip()[:40],
+        "model": str(product.get("model") or "").strip()[:80],
+    }
+
+
+def survey_plan(body: dict) -> dict:
+    dimensions = body.get("dimensions")
+    if not isinstance(dimensions, list) or not dimensions:
+        raise ValueError("至少勾一个维度")
+    return survey.coverage([str(d) for d in dimensions], survey.load())
+
+
+def _survey_run_id(scenario_id: str) -> str:
+    """A free run id under runs/survey/, not just under runs/."""
+    base = f"{jobs.new_id('survey')}-{scenario_id}"
+    candidate, n = base, 2
+    while survey.load_run(candidate, RUNS) is not None or (RUNS / candidate).exists():
+        candidate = f"{base}-{n}"
+        n += 1
+    return candidate
+
+
+def survey_start(body: dict) -> dict:
+    data = survey.load()
+    scenario = survey.find_scenario(data, str(body.get("scenario_id") or ""))
+    if scenario is None:
+        raise ValueError("没有这个场景")
+    if scenario["kind"] != "command":
+        raise ValueError("这个场景是人工记录，不走后台任务")
+    product = _product(body)
+
+    run_id = str(body.get("run_id") or "").strip()
+    if not run_id:
+        run_id = _survey_run_id(scenario["id"])
     if not RUN_ID_RE.fullmatch(run_id):
-        raise ValueError("run_id may only contain letters, digits, dot, underscore, hyphen")
-    blocker = run_dir_blocker(run_id)
-    if blocker:
-        raise ValueError(blocker)
-    run_dir = RUNS / run_id
-    workdir = run_dir / "work" / f"{task}-r1"
-    workdir.mkdir(parents=True, exist_ok=True)
-    LAST_OPENED[run_id] = time.monotonic()
-    (run_dir / ".workspace.json").write_text(json.dumps({
-        "task": task, "run_id": run_id, "created_at": datetime.now().isoformat(timespec="seconds"),
-    }, ensure_ascii=False, indent=2), encoding="utf-8")
-    apps.open_folder("qoder", workdir)
-    return {"run_id": run_id, "path": _rel(workdir)}
+        raise ValueError("run_id 只能包含字母、数字、点、下划线、连字符")
+    target = survey.run_dir(run_id, RUNS)
+    if target.exists() and any(target.iterdir()):
+        raise ValueError(f"run 目录已存在：{run_id}")
 
+    target.mkdir(parents=True, exist_ok=True)
+    spec = {
+        "run_id": run_id,
+        "product": product,
+        "scenario": scenario,
+        "dimensions": data["dimensions"],
+        "runs_root": str(RUNS),
+    }
+    spec_path = target / "spec.json"
+    spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-def start_eval(body: dict) -> dict:
-    driver = str(body.get("driver") or "").strip()
-    if driver not in DRIVERS:
-        raise ValueError("driver not allowed: " + (driver or "(empty)"))
-    issues = driver_problems(driver)
-    if issues:
-        raise ValueError("；".join(issues))
-    extra = body.get("driver_args") or []
-    if not isinstance(extra, list):
-        raise ValueError("driver_args must be a list")
-    extra = [str(arg) for arg in extra]
-    # Flags a driver may receive from the page: keep it a whitelist, so a form
-    # field can never become arbitrary argv.
-    allowed = set(driver_registry.allowed_args(driver))
-    bad = [arg for arg in extra if arg not in allowed]
-    if bad:
-        raise ValueError("driver argument not allowed: " + ", ".join(bad))
-    if driver == "drive_qoder.py" and os.name != "nt" and "--skip-workspace" not in extra:
-        raise ValueError("Linux 上 Qoder 建工作区依赖原生文件夹选择器，驱动建不了；"
-                         "先在评测页点「在 Qoder 中打开任务目录」（会自动勾选），"
-                         "或手动勾上「工作区已手动建好」")
-    picked = body.get("tasks") or []
-    if not isinstance(picked, list) or not picked:
-        raise ValueError("select at least one task")
-    picked = [str(t).strip() for t in picked]
-    unknown = [t for t in picked if t not in TASK_IDS]
-    if unknown:
-        raise ValueError("unknown task(s): " + ", ".join(unknown))
-    if len(set(picked)) != len(picked):
-        raise ValueError("duplicate task ids")
-    try:
-        reps = int(body.get("reps") or 1)
-    except (TypeError, ValueError):
-        raise ValueError("reps must be an integer") from None
-    if not 1 <= reps <= 10:
-        raise ValueError("reps must be 1..10")
-
-    run_id = str(body.get("run_id") or "").strip() or jobs.new_id("eval")
-    if not RUN_ID_RE.fullmatch(run_id):
-        raise ValueError("run_id may only contain letters, digits, dot, underscore, hyphen")
-    run_dir = run_dir_for(run_id)
-    blocker = run_dir_blocker(run_id)
-    if blocker:
-        raise ValueError(blocker)
-
-    # Opening the folder is part of starting a Qoder run: one less button, and
-    # impossible to start a run whose window points somewhere else.
-    if driver == "drive_qoder.py" and "--skip-workspace" in extra:
-        if len(picked) > 1:
-            raise ValueError("Qoder 一次只能跑一个任务：工作区绑定到一个目录")
-        recent = LAST_OPENED.get(run_id, 0)
-        if not recent or time.monotonic() - recent > 600:
-            open_workspace({"task": picked[0], "run_id": run_id})
-
-    argv = [
-        PY, str(EVAL / "tools" / "run_tool.py"),
-        "--driver", driver,
-        "--tasks", ",".join(picked),
-        "--reps", str(reps),
-        "--run", f"runs/{run_id}",
-    ]
-    if body.get("force"):
-        argv.append("--force")
-    for arg in extra:
-        argv += [f"--driver-arg={arg}"]
-
-    title = f"{DRIVERS[driver]} · {len(picked)} 个任务"
+    argv = [PY, str(HERE / "survey_run.py"), "--spec", str(spec_path)]
+    title = f"{product['name']} · {scenario['title']}"
     return jobs.start(
-        kind="eval", title=title, argv=argv,
-        env=deps.annotate(config.child_env()), cwd=ROOT,
-        meta={"driver": driver, "tasks": picked, "reps": reps},
-        run_dir=run_dir, job_id=run_id,
+        kind="survey", title=title, argv=argv,
+        env=deps.annotate(config.child_env(config.load())), cwd=ROOT,
+        meta={"product": product, "scenario_id": scenario["id"], "dimensions": scenario["dimensions"]},
+        run_dir=target, job_id=run_id,
     )
+
+
+def survey_batch(body: dict) -> dict:
+    """One scenario against several products, sequentially, in one job."""
+    data = survey.load()
+    scenario = survey.find_scenario(data, str(body.get("scenario_id") or ""))
+    if scenario is None:
+        raise ValueError("没有这个场景")
+    products = body.get("products")
+    if not isinstance(products, list) or not products:
+        raise ValueError("至少选一个产品")
+    if len(products) > 12:
+        raise ValueError("一次最多 12 个产品")
+    cleaned = [_product({"product": item}) for item in products]
+    if len({item["id"] for item in cleaned}) != len(cleaned):
+        raise ValueError("产品不能重复")
+    has_command = bool((scenario.get("command") or {}).get("argv"))
+    if not has_command:
+        ready = []
+        for product in cleaned:
+            candidate = executor.adapter_for(product)
+            if candidate is not None and candidate.available()[0]:
+                ready.append(candidate.label)
+        if not ready:
+            raise ValueError("这些产品现在还不能自动体验")
+
+
+    batch_id = jobs.new_id("survey")
+    target = RUNS / "survey" / batch_id
+    target.mkdir(parents=True, exist_ok=True)
+    spec = {
+        "batch_id": batch_id,
+        "scenario": scenario,
+        "products": cleaned,
+        "dimensions": data["dimensions"],
+        "runs_root": str(RUNS),
+    }
+    spec_path = target / "spec.json"
+    spec_path.write_text(json.dumps(spec, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+    argv = [PY, str(HERE / "survey_batch.py"), "--spec", str(spec_path)]
+    title = f"{scenario['title']} × {len(cleaned)} 个产品"
+    return jobs.start(
+        kind="survey", title=title, argv=argv,
+        env=deps.annotate(config.child_env(config.load())), cwd=ROOT,
+        meta={"scenario_id": scenario["id"], "products": [item["id"] for item in cleaned]},
+        run_dir=target, job_id=batch_id,
+    )
+
+
+def survey_record(body: dict) -> dict:
+    """Write one human-observed run (no child process)."""
+    data = survey.load()
+    scenario = survey.find_scenario(data, str(body.get("scenario_id") or ""))
+    if scenario is None:
+        raise ValueError("没有这个场景")
+    product = _product(body)
+    values = body.get("values")
+    if not isinstance(values, dict):
+        raise ValueError("values 必须是对象")
+    measurements = survey.build_measurements(scenario, data["dimensions"], values, method="human")
+    if not measurements:
+        raise ValueError("至少填一个指标")
+
+    confidence = str(body.get("confidence") or "single").strip()
+    if confidence not in survey.CONFIDENCE:
+        raise ValueError("confidence 只能是 single / repeat / measured")
+    evidence = str(body.get("evidence") or "").strip()[:300]
+
+    run_id = str(body.get("run_id") or "").strip()
+    if not run_id:
+        run_id = _survey_run_id(scenario["id"])
+    if not RUN_ID_RE.fullmatch(run_id):
+        raise ValueError("run_id 只能包含字母、数字、点、下划线、连字符")
+    if survey.load_run(run_id, RUNS) is not None:
+        raise ValueError(f"这个 run 已经存在：{run_id}")
+
+    record = {
+        "run_id": run_id,
+        "ts": survey.now(),
+        "product": product,
+        "scenario": {"id": scenario["id"], "title": scenario["title"]},
+        "dimensions": scenario["dimensions"],
+        "status": "ok",
+        "method": "human",
+        "confidence": confidence,
+        "duration_s": None,
+        "notes": str(body.get("notes") or "").strip()[:2000],
+        "measurements": [{**m, "evidence": evidence} for m in measurements],
+        "snapshot": survey.snapshot(scenario, data["dimensions"]),
+    }
+    survey.write_run(record, RUNS)
+    return {"run": record}
 
 
 class Handler(SimpleHTTPRequestHandler):
@@ -577,10 +560,16 @@ class Handler(SimpleHTTPRequestHandler):
             return self.json(config.public())
         if path == "/api/doctor":
             return self.json({"checks": doctor(), "apps": apps.all_status()})
-        if path == "/api/tasks":
-            return self.json({"tasks": TASKS})
         if path == "/api/jobs":
             return self.json({"jobs": jobs.list_jobs(50)})
+        if path == "/api/apps":
+            return self.json({"apps": apps.all_status()})
+        if path == "/api/survey":
+            return self.json(survey_state())
+        if path == "/api/survey/report":
+            raw = (parse_qs(url.query).get("dimensions") or [""])[0]
+            picked = [d for d in raw.split(",") if d]
+            return self.json(survey.matrix(picked or None, RUNS))
         if path == "/api/jobs/file":
             return self.job_file(url)
         m = re.fullmatch(r"/api/jobs/([A-Za-z0-9._-]+)/log", path)
@@ -605,21 +594,63 @@ class Handler(SimpleHTTPRequestHandler):
                 return self.json({"config": config.public()})
             if path == "/api/config/test":
                 return self.json(self.test_llm(body))
+            if path == "/api/config/test-search":
+                return self.json(self.test_search(body))
             if path == "/api/deps/install":
                 ok, log = deps.install()
                 return self.json({"ok": ok, "log": log, "checks": doctor()})
-            m = re.fullmatch(r"/api/apps/([a-z]+)/launch", path)
+            m = re.fullmatch(r"/api/apps/([A-Za-z0-9._-]+)/launch", path)
             if m:
                 return self.json({"app": apps.launch(m.group(1), bool(body.get("restart")))})
-            if path == "/api/apps/workspace-open":
-                return self.json(open_workspace(body))
+            if path == "/api/plugins/apps":
+                return self.json({"app": apps.add_custom(body)}, HTTPStatus.CREATED)
+            if path == "/api/plugins/apps/remove":
+                removed = apps.remove_custom(str(body.get("id") or ""))
+                return self.json({"removed": removed, "apps": apps.all_status()})
+            if path == "/api/plugins/drivers":
+                entry = plugins.add_driver(body)
+                refresh_drivers()
+                return self.json({"driver": entry, "drivers": drivers_state()}, HTTPStatus.CREATED)
+            if path == "/api/plugins/drivers/remove":
+                removed = plugins.remove_driver(str(body.get("file") or ""))
+                refresh_drivers()
+                return self.json({"removed": removed, "drivers": drivers_state()})
+            if path == "/api/discovered/remove":
+                removed = plugins.remove_discovered(str(body.get("id") or ""))
+                return self.json({"removed": removed, "discovered": plugins.list_discovered()})
+            if path == "/api/survey/dimension/save":
+                patch = body.get("dimension") if isinstance(body.get("dimension"), dict) else body
+                survey.upsert_dimension(patch)
+                return self.json(survey_state(), HTTPStatus.CREATED)
+            if path == "/api/survey/dimension/delete":
+                survey.delete_dimension(str(body.get("id") or ""))
+                return self.json(survey_state())
+            if path == "/api/survey/scenario/save":
+                patch = body.get("scenario") if isinstance(body.get("scenario"), dict) else body
+                survey.upsert_scenario(patch)
+                return self.json(survey_state(), HTTPStatus.CREATED)
+            if path == "/api/survey/scenario/delete":
+                survey.delete_scenario(str(body.get("id") or ""))
+                return self.json(survey_state())
+            if path == "/api/survey/plan":
+                return self.json(survey_plan(body))
+            if path == "/api/survey/run":
+                return self.json({"job": survey_start(body)}, HTTPStatus.CREATED)
+            if path == "/api/survey/batch":
+                return self.json({"job": survey_batch(body)}, HTTPStatus.CREATED)
+            if path == "/api/survey/record":
+                return self.json(survey_record(body), HTTPStatus.CREATED)
+            if path == "/api/survey/export":
+                dimensions = body.get("dimensions")
+                picked = [str(d) for d in dimensions] if isinstance(dimensions, list) else None
+                result = survey.export_report(str(body.get("title") or "能力画像"), picked, RUNS)
+                result["path"] = _rel(Path(result["path"]))
+                return self.json(result)
             if path == "/api/jobs":
                 kind = str(body.get("kind") or "")
-                if kind == "walkthrough":
-                    return self.json({"job": start_walkthrough(body)}, HTTPStatus.CREATED)
-                if kind == "eval":
-                    return self.json({"job": start_eval(body)}, HTTPStatus.CREATED)
-                raise ValueError("kind must be walkthrough or eval")
+                if kind == "discover":
+                    return self.json({"job": start_discover(body)}, HTTPStatus.CREATED)
+                raise ValueError("kind must be discover")
             m = re.fullmatch(r"/api/jobs/([A-Za-z0-9._-]+)/stop", path)
             if m:
                 return self.json({"job": jobs.stop(m.group(1))})
@@ -690,6 +721,19 @@ class Handler(SimpleHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def test_search(self, body: dict):
+        """One explicit search with the saved provider/key (or form overrides)."""
+        cfg = config.load()
+        web = dict(cfg["web"])
+        provider = str(body.get("provider") or web.get("provider") or "").strip()
+        key = str(body.get("api_key") or "").strip() or config.effective_search_key(cfg)
+        base = body.get("base_url") if "base_url" in body else web.get("base_url")
+        limit = body.get("max_results", web.get("max_results"))
+        query = str(body.get("query") or "DeepSeek").strip()
+        if not key:
+            raise ValueError("还没有保存搜索 API Key")
+        return websearch.search(provider, key, query, max_results=limit, base_url=base)
+
     def test_llm(self, body: dict):
         """One tiny chat completion against the stored endpoint."""
         import urllib.error
@@ -747,7 +791,7 @@ def main() -> int:
     if missing:
         print(f"warning: missing {', '.join(missing)}; CDP drivers and the CDP "
               f"walkthrough backend will fail.\n"
-              f"         Fix from the page (设置 → 安装依赖) or run:\n"
+              f"         Fix from the page (配置 → 安装依赖) or run:\n"
               f"         python3 -m pip install --target workbench/.deps -r harness/requirements.txt",
               file=sys.stderr)
     server = ThreadingHTTPServer((a.host, a.port), Handler)

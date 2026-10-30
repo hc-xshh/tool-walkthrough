@@ -16,6 +16,8 @@ import os
 import stat
 from pathlib import Path
 
+import websearch
+
 DEFAULT_BASE_URL = "https://api.openai.com/v1"
 DEFAULT_MODEL = "gpt-4o-mini"
 DEFAULT_TIMEOUT = 120
@@ -30,8 +32,13 @@ def config_path() -> Path:
 
 
 def empty() -> dict:
-    return {"llm": {"base_url": DEFAULT_BASE_URL, "model": DEFAULT_MODEL,
-                    "api_key": "", "timeout": DEFAULT_TIMEOUT}}
+    return {
+        "llm": {"base_url": DEFAULT_BASE_URL, "model": DEFAULT_MODEL,
+                "api_key": "", "timeout": DEFAULT_TIMEOUT},
+        "web": {"provider": websearch.DEFAULT_PROVIDER, "api_key": "",
+                "base_url": "", "max_results": websearch.DEFAULT_MAX_RESULTS,
+                "enabled": True},
+    }
 
 
 def load() -> dict:
@@ -50,13 +57,27 @@ def load() -> dict:
     timeout = llm.get("timeout")
     if isinstance(timeout, (int, float)) and timeout > 0:
         data["llm"]["timeout"] = float(timeout)
+
+    web = raw.get("web") if isinstance(raw.get("web"), dict) else {}
+    provider = web.get("provider")
+    if isinstance(provider, str) and provider.strip() in websearch.provider_ids():
+        data["web"]["provider"] = provider.strip()
+    for key in ("api_key", "base_url"):
+        if isinstance(web.get(key), str):
+            data["web"][key] = web[key].strip()
+    max_results = web.get("max_results")
+    if isinstance(max_results, int) and 1 <= max_results <= 10:
+        data["web"]["max_results"] = max_results
+    if isinstance(web.get("enabled"), bool):
+        data["web"]["enabled"] = web["enabled"]
     return data
 
 
 def save(patch: dict) -> dict:
     """Merge `patch` into the file. An empty api_key means "keep the old one"."""
     current = load()
-    llm_patch = patch.get("llm") if isinstance(patch.get("llm"), dict) else patch
+    has_sections = isinstance(patch.get("llm"), dict) or isinstance(patch.get("web"), dict)
+    llm_patch = patch.get("llm") if isinstance(patch.get("llm"), dict) else ({} if has_sections else patch)
     if not isinstance(llm_patch, dict):
         raise ValueError("config payload must be an object")
 
@@ -82,6 +103,43 @@ def save(patch: dict) -> dict:
     base = current["llm"]["base_url"]
     if not base.startswith(("http://", "https://")):
         raise ValueError("base_url must start with http:// or https://")
+
+    web_patch = patch.get("web") if isinstance(patch.get("web"), dict) else {}
+    if web_patch:
+        old_provider = current["web"].get("provider")
+        provider = web_patch.get("provider")
+        if provider is not None:
+            provider = str(provider).strip()
+            if provider not in websearch.provider_ids():
+                raise ValueError(f"unsupported search provider: {provider}")
+            current["web"]["provider"] = provider
+        new_key = str(web_patch.get("api_key") or "").strip() if "api_key" in web_patch else ""
+        if provider is not None and provider != old_provider and not new_key:
+            # A write-only key cannot be inspected by the browser. Sending an
+            # Exa key to DeepSeek (or vice versa) only produces a confusing
+            # 401, so switching providers clears the old slot.
+            current["web"]["api_key"] = ""
+        if "api_key" in web_patch:
+            value = str(web_patch["api_key"]).strip()
+            if value:  # empty means "leave the stored key alone" (same provider)
+                current["web"]["api_key"] = value
+                current["web"]["enabled"] = True
+        if "base_url" in web_patch:
+            value = str(web_patch["base_url"]).strip()
+            if value and not value.startswith(("http://", "https://")):
+                raise ValueError("search base_url must start with http:// or https://")
+            current["web"]["base_url"] = value
+        if "max_results" in web_patch:
+            try:
+                limit = int(web_patch["max_results"])
+            except (TypeError, ValueError):
+                raise ValueError("max_results must be an integer") from None
+            if not 1 <= limit <= 10:
+                raise ValueError("max_results must be 1..10")
+            current["web"]["max_results"] = limit
+        if "enabled" in web_patch:
+            current["web"]["enabled"] = bool(web_patch["enabled"])
+
     write(current)
     return current
 
@@ -103,6 +161,30 @@ def write(data: dict) -> Path:
     return path
 
 
+def can_reuse_llm_key(data: dict | None = None) -> bool:
+    """True when the configured chat endpoint/key is DeepSeek.
+
+    DeepSeek's search API uses the same key as the model. Reusing it avoids
+    asking the user to paste the same secret twice, but an OpenAI/Anthropic
+    model key must never be sent to DeepSeek.
+    """
+    cfg = data if data is not None else load()
+    base = str(cfg["llm"].get("base_url") or "").lower()
+    model = str(cfg["llm"].get("model") or "").lower()
+    return "deepseek" in base or model.startswith("deepseek")
+
+
+def effective_search_key(data: dict | None = None) -> str:
+    """The key a DeepSeek search would use: explicit web key first, then chat key."""
+    cfg = data if data is not None else load()
+    web = cfg["web"]
+    if web.get("api_key"):
+        return str(web["api_key"])
+    if web.get("provider") == "deepseek" and can_reuse_llm_key(cfg):
+        return str(cfg["llm"].get("api_key") or "")
+    return ""
+
+
 def key_hint(key: str) -> str:
     if not key:
         return ""
@@ -115,6 +197,10 @@ def public(data: dict | None = None) -> dict:
     """What the browser is allowed to see. Never includes the key."""
     cfg = data if data is not None else load()
     llm = cfg["llm"]
+    web_key = str(cfg["web"].get("api_key") or "")
+    reused = bool(not web_key and cfg["web"].get("provider") == "deepseek"
+                  and can_reuse_llm_key(cfg) and llm.get("api_key"))
+    effective = web_key or (str(llm.get("api_key") or "") if reused else "")
     return {
         "configured": bool(llm.get("api_key")),
         "key_hint": key_hint(llm.get("api_key", "")),
@@ -122,6 +208,16 @@ def public(data: dict | None = None) -> dict:
         "model": llm.get("model", DEFAULT_MODEL),
         "timeout": llm.get("timeout", DEFAULT_TIMEOUT),
         "path": str(config_path()),
+        "web": {
+            "provider": cfg["web"].get("provider", websearch.DEFAULT_PROVIDER),
+            "configured": bool(effective),
+            "reused": reused,
+            "key_hint": key_hint(effective),
+            "base_url": cfg["web"].get("base_url", ""),
+            "max_results": cfg["web"].get("max_results", websearch.DEFAULT_MAX_RESULTS),
+            "enabled": bool(cfg["web"].get("enabled")),
+            "providers": websearch.providers(),
+        },
     }
 
 

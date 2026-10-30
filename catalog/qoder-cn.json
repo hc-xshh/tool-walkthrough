@@ -1,0 +1,107 @@
+{
+  "id": "qoder-cn",
+  "name": "Qoder CN",
+  "vendor": "Alibaba Cloud",
+  "positioning": "阿里云（Alibaba Cloud）的 AI agent 套件，覆盖编码和日常工作：IDE、JetBrains 插件、终端 CLI、工作台、数字员工和云代理。",
+  "aliases": [
+    "Qoder",
+    "Lingma",
+    "通义灵码"
+  ],
+  "category": [
+    "ai-ide",
+    "agent-suite",
+    "coding"
+  ],
+  "homepage": "https://www.alibabacloud.com/help/en/lingma/introduction-of-lingma",
+  "docs": "https://docs.qoder.cn",
+  "sources": [
+    {
+      "url": "https://www.alibabacloud.com/help/en/lingma/introduction-of-lingma",
+      "title": "Qoder CN suite - Alibaba Cloud",
+      "verified_at": "2026-10-30"
+    }
+  ],
+  "products": [
+    {
+      "id": "qoder-ide",
+      "name": "Qoder CN IDE",
+      "form": "ide",
+      "positioning": "Agent-first IDE for coding.",
+      "surfaces": [
+        {
+          "id": "gui",
+          "label": "IDE GUI",
+          "kind": "gui",
+          "app_id": "qoder",
+          "driver_id": "drive_qoder.py"
+        }
+      ]
+    },
+    {
+      "id": "qoder-cli",
+      "name": "Qoder CN CLI",
+      "form": "cli",
+      "positioning": "Native terminal coding agent.",
+      "surfaces": [
+        {
+          "id": "cli",
+          "label": "Terminal",
+          "kind": "cli"
+        }
+      ]
+    },
+    {
+      "id": "qoder-jetbrains",
+      "name": "Qoder CN JetBrains Plugin",
+      "form": "plugin",
+      "positioning": "Qoder inside JetBrains IDEs.",
+      "surfaces": [
+        {
+          "id": "plugin",
+          "label": "JetBrains plugin",
+          "kind": "plugin"
+        }
+      ]
+    },
+    {
+      "id": "qoderwork",
+      "name": "QoderWork CN",
+      "form": "work",
+      "positioning": "Desktop app for daily work scenarios.",
+      "surfaces": [
+        {
+          "id": "desktop",
+          "label": "Desktop app",
+          "kind": "desktop"
+        }
+      ]
+    },
+    {
+      "id": "qoderwake",
+      "name": "QoderWake CN",
+      "form": "agent",
+      "positioning": "Digital employee / always-on agent.",
+      "surfaces": [
+        {
+          "id": "agent",
+          "label": "Digital employee",
+          "kind": "agent"
+        }
+      ]
+    },
+    {
+      "id": "cloud-agents",
+      "name": "Cloud Agents CN",
+      "form": "cloud",
+      "positioning": "Cloud-based agent platform.",
+      "surfaces": [
+        {
+          "id": "cloud",
+          "label": "Cloud platform",
+          "kind": "cloud"
+        }
+      ]
+    }
+  ]
+}

@@ -17,6 +17,8 @@ import subprocess
 import time
 from pathlib import Path
 
+import plugins
+
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 LOG_DIR = ROOT / "runs" / "workbench" / "apps"
@@ -44,10 +46,53 @@ APPS: dict[str, dict] = {
 
 
 def _resolve(app: dict) -> str:
-    exe = app.get("exe") or ""
-    if exe and Path(exe).exists():
-        return exe
-    return shutil.which(app.get("label", "")) or ""
+    exe = str(app.get("exe") or "").strip()
+    if exe:
+        candidate = Path(exe).expanduser()
+        if candidate.is_file():
+            return str(candidate)
+        found = shutil.which(exe)
+        if found:
+            return found
+    return shutil.which(str(app.get("label") or "")) or ""
+
+
+def _custom_apps() -> dict[str, dict]:
+    out = {}
+    for item in plugins.load().get("apps", []):
+        app_id = str(item.get("id") or "").strip()
+        if app_id:
+            out[app_id] = item
+    return out
+
+
+def all_apps() -> dict[str, dict]:
+    """Built-in apps, plus user overrides / custom apps from plugins.json."""
+    merged = {app_id: dict(spec) for app_id, spec in APPS.items()}
+    for app_id, entry in _custom_apps().items():
+        if app_id in merged:
+            base = merged[app_id]
+            if entry.get("exe"):
+                base["exe"] = str(entry["exe"]).strip()
+            base["custom_override"] = True
+            merged[app_id] = base
+        else:
+            label = str(entry.get("label") or "").strip()
+            exe = str(entry.get("exe") or "").strip()
+            try:
+                port = int(entry.get("port"))
+            except (TypeError, ValueError):
+                continue
+            if not label or not exe or not 1 <= port <= 65535:
+                continue
+            merged[app_id] = {
+                "label": label,
+                "exe": exe,
+                "open": [],
+                "port": port,
+                "custom": True,
+            }
+    return merged
 
 
 def _processes(exe: str) -> list[tuple[int, str]]:
@@ -80,7 +125,7 @@ def _port_open(port: int, timeout: float = 0.5) -> bool:
 
 
 def status(app_id: str) -> dict:
-    app = APPS.get(app_id)
+    app = all_apps().get(app_id)
     if not app:
         raise KeyError(app_id)
     exe = _resolve(app)
@@ -98,15 +143,56 @@ def status(app_id: str) -> dict:
         "pid": procs[0][0] if procs else None,
         "debug_flag": any(flag in args for _, args in procs),
         "can_open_folder": bool(app.get("open")) and bool(Path(app["open"][0]).exists()),
+        "custom": bool(app.get("custom")),
+        "overridden": bool(app.get("custom_override")),
     }
 
 
 def all_status() -> list[dict]:
-    return [status(app_id) for app_id in APPS]
+    return [status(app_id) for app_id in all_apps()]
+
+
+def add_custom(body: dict) -> dict:
+    """Add a custom GUI app, or set an executable override on a built-in app."""
+    app_id = str(body.get("id") or "").strip()
+    exe = str(body.get("exe") or "").strip()
+    if not exe:
+        raise ValueError("填一个可执行文件路径或命令名")
+    if not _resolve({"exe": exe, "label": ""}):
+        raise ValueError(f"找不到可执行文件：{exe}")
+    if app_id in APPS:
+        plugins.upsert_app({"id": app_id, "exe": exe})
+        return status(app_id)
+    if app_id and app_id in all_apps():
+        raise ValueError(f"app id 已存在：{app_id}")
+    label = str(body.get("label") or "").strip()
+    if not label:
+        raise ValueError("填写应用名称")
+    try:
+        port = int(body.get("port"))
+    except (TypeError, ValueError):
+        raise ValueError("调试端口必须是整数") from None
+    if not 1 <= port <= 65535:
+        raise ValueError("调试端口需要在 1–65535 之间")
+    for existing_id, spec in all_apps().items():
+        if int(spec.get("port") or 0) == port:
+            raise ValueError(f"调试端口 {port} 已被「{spec.get('label') or existing_id}」使用")
+    base = "custom-" + (plugins.slug(label) or "app")
+    candidate = base
+    n = 2
+    while candidate in all_apps():
+        candidate = f"{base}-{n}"
+        n += 1
+    plugins.upsert_app({"id": candidate, "label": label, "exe": exe, "port": port})
+    return status(candidate)
+
+
+def remove_custom(app_id: str) -> bool:
+    return plugins.remove_app(app_id)
 
 
 def launch(app_id: str, restart: bool = False, wait: float = 25.0) -> dict:
-    app = APPS.get(app_id)
+    app = all_apps().get(app_id)
     if not app:
         raise KeyError(app_id)
     current = status(app_id)

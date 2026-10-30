@@ -1,0 +1,79 @@
+{
+  "id": "codex",
+  "name": "Codex",
+  "vendor": "OpenAI",
+  "positioning": "OpenAI 的软件工程 coding agent，覆盖 ChatGPT、IDE、终端、云和桌面 App。",
+  "aliases": [
+    "OpenAI Codex",
+    "Codex CLI"
+  ],
+  "category": [
+    "coding",
+    "agent",
+    "cli"
+  ],
+  "homepage": "https://chatgpt.com/codex/",
+  "docs": "https://developers.openai.com/codex/",
+  "sources": [
+    {
+      "url": "https://chatgpt.com/codex/",
+      "title": "Codex - OpenAI",
+      "verified_at": "2026-10-30"
+    }
+  ],
+  "products": [
+    {
+      "id": "codex-cli",
+      "name": "Codex CLI",
+      "form": "cli",
+      "positioning": "Terminal coding agent.",
+      "surfaces": [
+        {
+          "id": "cli",
+          "label": "Terminal",
+          "kind": "cli",
+          "driver_id": "drive_codex.py"
+        }
+      ]
+    },
+    {
+      "id": "codex-ide",
+      "name": "Codex IDE Extension",
+      "form": "plugin",
+      "positioning": "Codex inside the editor.",
+      "surfaces": [
+        {
+          "id": "plugin",
+          "label": "IDE extension",
+          "kind": "plugin"
+        }
+      ]
+    },
+    {
+      "id": "codex-cloud",
+      "name": "Codex Cloud",
+      "form": "cloud",
+      "positioning": "Cloud agents and code review.",
+      "surfaces": [
+        {
+          "id": "cloud",
+          "label": "Cloud",
+          "kind": "cloud"
+        }
+      ]
+    },
+    {
+      "id": "codex-app",
+      "name": "Codex App",
+      "form": "desktop",
+      "positioning": "Desktop app for managing multiple agents.",
+      "surfaces": [
+        {
+          "id": "desktop",
+          "label": "Desktop app",
+          "kind": "desktop"
+        }
+      ]
+    }
+  ]
+}

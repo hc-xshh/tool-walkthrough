@@ -74,6 +74,53 @@ class ConfigTest(unittest.TestCase):
         self.assertEqual(env["WT_LLM_API_KEY"], "sk-secret-abcd")
         self.assertEqual(env["WT_LLM_BASE_URL"], "https://example.test/v1")
 
+    def test_search_key_is_write_only_and_independent(self):
+        config.save({"llm": {"api_key": "sk-llm-abcd"},
+                     "web": {"provider": "tavily", "api_key": "tv-search-wxyz",
+                             "max_results": 3}})
+        data = config.load()
+        self.assertEqual(data["llm"]["api_key"], "sk-llm-abcd")
+        self.assertEqual(data["web"]["api_key"], "tv-search-wxyz")
+        self.assertEqual(data["web"]["max_results"], 3)
+        public = config.public()
+        self.assertTrue(public["web"]["configured"])
+        self.assertNotIn("api_key", public["web"])
+        self.assertNotIn("tv-search-wxyz", json.dumps(public))
+        self.assertEqual(public["web"]["key_hint"], "****wxyz")
+
+    def test_empty_search_key_keeps_the_stored_one(self):
+        config.save({"web": {"provider": "exa", "api_key": "exa-keep-abcd"}})
+        config.save({"web": {"provider": "exa", "api_key": "", "max_results": 4}})
+        data = config.load()
+        self.assertEqual(data["web"]["api_key"], "exa-keep-abcd")
+        self.assertEqual(data["web"]["max_results"], 4)
+
+    def test_bad_search_provider_is_rejected(self):
+        with self.assertRaises(ValueError):
+            config.save({"web": {"provider": "google", "api_key": "x"}})
+
+    def test_deepseek_search_reuses_the_model_key(self):
+        config.save({"base_url": "https://api.deepseek.com",
+                     "model": "deepseek-v4-flash", "api_key": "sk-ds-abcd"})
+        public = config.public()
+        self.assertTrue(public["web"]["configured"])
+        self.assertTrue(public["web"]["reused"])
+        self.assertEqual(public["web"]["key_hint"], "****abcd")
+        self.assertEqual(config.effective_search_key(), "sk-ds-abcd")
+
+    def test_non_deepseek_model_does_not_reuse_its_key(self):
+        config.save({"base_url": "https://api.openai.com/v1",
+                     "model": "gpt-4o-mini", "api_key": "sk-oai-abcd"})
+        public = config.public()
+        self.assertFalse(public["web"]["configured"])
+        self.assertFalse(public["web"]["reused"])
+        self.assertEqual(config.effective_search_key(), "")
+
+    def test_switching_provider_clears_the_old_key(self):
+        config.save({"web": {"provider": "exa", "api_key": "exa-key-abcd"}})
+        config.save({"web": {"provider": "deepseek", "max_results": 5}})
+        self.assertEqual(config.load()["web"]["api_key"], "")
+
 
 class AppsTest(unittest.TestCase):
     def test_unknown_app_is_a_key_error(self):
@@ -238,150 +285,7 @@ class DepsTest(unittest.TestCase):
         self.assertEqual(missing.get("wb_sentinel_not_a_module"), "测试用途")
 
 
-class RunDirReuseTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        base = pathlib.Path(self.tmp.name)
-        self.runs = base / "runs"
-        self.jobs_dir = base / "jobs"
-        self.runs.mkdir()
-        self.jobs_dir.mkdir()
-        self.patches = [
-            mock.patch.object(server, "RUNS", self.runs),
-            mock.patch.object(jobs, "JOBS", self.jobs_dir),
-        ]
-        for patch in self.patches:
-            patch.start()
-
-    def tearDown(self):
-        for patch in self.patches:
-            patch.stop()
-        self.tmp.cleanup()
-
-    def make(self, name, *files):
-        run_dir = self.runs / name
-        run_dir.mkdir(parents=True)
-        for rel in files:
-            path = run_dir / rel
-            path.parent.mkdir(parents=True, exist_ok=True)
-            path.write_text("{}", encoding="utf-8")
-        return run_dir
-
-    def test_fresh_id_is_free(self):
-        self.assertIsNone(server.run_dir_blocker("new-run"))
-
-    def test_workspace_prepared_dir_is_reused(self):
-        self.make("ws-run", ".workspace.json")
-        self.assertIsNone(server.run_dir_blocker("ws-run"))
-
-    def test_legacy_work_skeleton_is_reused(self):
-        self.make("legacy-run", "work/L1-split-bill-r1/.keep")
-        self.assertIsNone(server.run_dir_blocker("legacy-run"))
-
-    def test_results_block_reuse(self):
-        self.make("done-run", ".workspace.json", "results/L1-r1.json")
-        self.assertIn("结果", server.run_dir_blocker("done-run"))
-
-    def test_existing_job_blocks_reuse(self):
-        self.make("old-run", ".workspace.json")
-        (self.jobs_dir / "old-run.json").write_text("{}", encoding="utf-8")
-        self.assertIn("跑过", server.run_dir_blocker("old-run"))
-
-    def test_foreign_directory_blocks_reuse(self):
-        self.make("random-dir", "something.txt")
-        self.assertIn("不是工作台预建", server.run_dir_blocker("random-dir"))
-
-
-class StartEvalWithPreparedDirTest(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        base = pathlib.Path(self.tmp.name)
-        self.runs = base / "runs"
-        self.jobs_dir = base / "jobs"
-        self.runs.mkdir()
-        self.jobs_dir.mkdir()
-        self.patches = [
-            mock.patch.object(server, "RUNS", self.runs),
-            mock.patch.object(jobs, "JOBS", self.jobs_dir),
-            mock.patch.object(server, "driver_problems", return_value=[]),
-            mock.patch.object(server.apps, "open_folder", return_value={"verified": True}),
-        ]
-        for patch in self.patches:
-            patch.start()
-        run_dir = self.runs / "prepared-run"
-        run_dir.mkdir(parents=True)
-        (run_dir / ".workspace.json").write_text("{}", encoding="utf-8")
-
-    def tearDown(self):
-        for patch in self.patches:
-            patch.stop()
-        self.tmp.cleanup()
-
-    def test_start_opens_the_workspace_automatically(self):
-        calls = []
-
-        def fake_open(app_id, path, **kwargs):
-            calls.append((app_id, str(path)))
-            return {"verified": True}
-
-        with mock.patch.object(server.apps, "open_folder", side_effect=fake_open), \
-                mock.patch.object(jobs, "start", return_value={"id": "auto-open"}):
-            server.start_eval({
-                "driver": "drive_qoder.py",
-                "tasks": ["L1-split-bill"],
-                "reps": 1,
-                "run_id": "auto-open-run",
-                "driver_args": ["--skip-workspace"],
-            })
-        self.assertEqual(len(calls), 1)
-        self.assertEqual(calls[0][0], "qoder")
-        self.assertIn("L1-split-bill-r1", calls[0][1])
-
-    def test_multiple_tasks_are_refused_for_qoder(self):
-        with self.assertRaises(ValueError) as ctx:
-            server.start_eval({
-                "driver": "drive_qoder.py",
-                "tasks": ["L1-split-bill", "L2-todo-due"],
-                "reps": 1,
-                "driver_args": ["--skip-workspace"],
-            })
-        self.assertIn("一次只能跑一个任务", str(ctx.exception))
-
-    def test_prepared_dir_can_start_and_forwards_skip_workspace(self):
-        captured = {}
-
-        def fake_start(**kwargs):
-            captured.update(kwargs)
-            return {"id": kwargs.get("job_id")}
-
-        with mock.patch.object(jobs, "start", side_effect=fake_start):
-            server.start_eval({
-                "driver": "drive_qoder.py",
-                "tasks": ["L1-split-bill"],
-                "reps": 1,
-                "run_id": "prepared-run",
-                "driver_args": ["--skip-workspace"],
-            })
-        argv = captured["argv"]
-        self.assertTrue(any("--skip-workspace" in arg for arg in argv), argv)
-        self.assertIn("prepared-run", " ".join(argv))
-        self.assertIsNotNone(captured["run_dir"])
-
-
 class DriverAvailabilityTest(unittest.TestCase):
-    def test_cli_driver_reports_a_missing_binary(self):
-        with mock.patch.object(server.shutil, "which", return_value=None):
-            issues = server.driver_problems("drive_codex.py")
-        self.assertTrue(issues)
-        self.assertIn("codex", issues[0])
-
-    def test_gui_driver_requires_a_real_desktop(self):
-        with mock.patch.object(server, "real_desktop_check", return_value={
-                "ok": False, "detail": "virtual displays are disabled (:1)",
-                "fix": "use DISPLAY=:0"}):
-            issues = server.driver_problems("drive_qoder.py")
-        self.assertTrue(any("virtual displays" in issue for issue in issues))
-
     def test_drivers_state_carries_availability(self):
         state = {d["id"]: d for d in server.drivers_state()}
         self.assertIn("drive_qoder.py", state)
@@ -389,26 +293,6 @@ class DriverAvailabilityTest(unittest.TestCase):
             self.assertIn("available", item)
             self.assertIn("why", item)
             self.assertIsInstance(item["available"], bool)
-
-
-class DialogSummaryTest(unittest.TestCase):
-    def test_counts_dialog_events_from_trace(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            results = pathlib.Path(tmp) / "results"
-            results.mkdir()
-            events = ["dialog_handled", "dialog_handled", "dialog_blocked", "sent"]
-            (results / "L1-r1.trace.jsonl").write_text(
-                "\n".join(json.dumps({"event": e, "label": "是，我信任此作者"}) for e in events),
-                encoding="utf-8")
-            summary = server.dialog_summary(pathlib.Path(tmp))
-        self.assertEqual(summary["handled"], 2)
-        self.assertEqual(summary["blocked"], 1)
-        self.assertEqual(summary["unknown"], 0)
-        self.assertEqual(len(summary["items"]), 3)
-
-    def test_missing_run_dir_is_empty(self):
-        summary = server.dialog_summary(None)
-        self.assertEqual(summary["handled"] + summary["blocked"] + summary["unknown"], 0)
 
 
 class JobsTest(unittest.TestCase):
@@ -495,3 +379,66 @@ class JobsTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SurveyApiTest(unittest.TestCase):
+    """The dimension / run / report endpoints, exercised without HTTP."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.base = pathlib.Path(self.tmp.name)
+        self.runs = self.base / "runs"
+        self.env = mock.patch.dict(os.environ, {"WT_SURVEY": str(self.base / "survey.json")})
+        self.env.start()
+        self.patches = [mock.patch.object(server, "RUNS", self.runs),
+                        mock.patch.object(jobs, "RUNS", self.runs)]
+        for patch in self.patches:
+            patch.start()
+
+    def tearDown(self):
+        for patch in reversed(self.patches):
+            patch.stop()
+        self.env.stop()
+        self.tmp.cleanup()
+
+    def test_state_exposes_dimensions_products_and_runs(self):
+        state = server.survey_state()
+        self.assertEqual(len(state["dimensions"]), 8)
+        self.assertTrue(state["products"])
+        self.assertEqual(state["runs"], [])
+        self.assertIn("survey.json", state["store"])
+
+    def test_plan_needs_a_dimension(self):
+        with self.assertRaises(ValueError):
+            server.survey_plan({"dimensions": []})
+        plan = server.survey_plan({"dimensions": ["speed"]})
+        self.assertTrue(plan["scenarios"])
+
+    def test_record_writes_one_json_and_rejects_typos(self):
+        body = {"product": {"id": "qoder-ide", "name": "Qoder CN IDE", "version": "0.4.9"},
+                "scenario_id": "full-delivery",
+                "values": {"first_token_ms": "1200"}, "confidence": "single"}
+        out = server.survey_record(body)
+        run_id = out["run"]["run_id"]
+        path = self.runs / "survey" / run_id / "run.json"
+        self.assertTrue(path.is_file())
+        self.assertEqual(len(json.loads(path.read_text(encoding="utf-8"))["measurements"]), 2)
+        with self.assertRaises(ValueError):
+            server.survey_record({**body, "values": {"nope": 1}})
+
+    def test_manual_scenario_cannot_start_a_background_job(self):
+        with self.assertRaises(ValueError):
+            server.survey_start({"product": {"id": "qoder-ide"},
+                                 "scenario_id": "full-delivery"})
+
+    def test_batch_needs_a_command_scenario(self):
+        with self.assertRaises(ValueError):
+            server.survey_batch({"scenario_id": "full-delivery",
+                                 "products": [{"id": "qoder-ide"}]})
+        with self.assertRaises(ValueError):
+            server.survey_batch({"scenario_id": "full-delivery", "products": []})
+
+    def test_report_starts_empty_and_export_needs_no_data(self):
+        table = server.survey.matrix(None, self.runs)
+        self.assertEqual(table["cells"], {})
+        self.assertEqual(len(server.survey_state()["runs"]), 0)
