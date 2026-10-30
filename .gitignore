@@ -1,10 +1,24 @@
+# OS / editor
 .DS_Store
-*.tmp
 *.swp
+*.tmp
+
+# Python
 __pycache__/
-runs/
 *.pyc
+.venv/
+*.egg-info/
+.pytest_cache/
+
+# Runtime output. Evidence may contain accounts, desktop state and login
+# sessions; committing a run is a deliberate opt-in, never the default.
+runs/
 debug.log
-.dsh-office-*
 .selftest-tmp/
+.dsh-office-*
+
+# Vendored workbench deps, rebuilt by workbench/deps.py
 workbench/.deps/
+
+# Scratch JS files the CDP drivers write next to themselves
+code-eval/tools/_*_tmp.js
