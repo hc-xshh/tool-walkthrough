@@ -65,12 +65,12 @@ def check_node():
         return None
     total = 0.0
     for rel in ("harness/webapp_accept.mjs", "code-eval/dashboard/app.js",
-                "workbench/web/app.js"):
+                "workbench/web/app.js", "tests/dom_replay.mjs"):
         rc, seconds, detail = run([node, "--check", rel], 60)
         total += seconds
         if rc != 0:
             return rc, round(total, 1), f"{rel}: {detail}"
-    return 0, round(total, 1), "webapp_accept.mjs + dashboard/app.js + workbench/app.js"
+    return 0, round(total, 1), "webapp_accept.mjs + dashboard/app.js + workbench/app.js + dom_replay.mjs"
 
 
 def check_workbench():

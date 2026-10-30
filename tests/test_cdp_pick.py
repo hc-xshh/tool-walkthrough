@@ -63,6 +63,18 @@ class PickTargetTest(unittest.TestCase):
         self.assertIn("L1-split-bill-r1", picked["title"])
         self.assertIsNone(cdp.pick_target(tabs, title_match="not-there"))
 
+    def test_two_windows_with_the_same_title_are_refused(self):
+        # Qoder restores its last windows on launch; two identical titles used
+        # to be resolved by score, so the driver could attach to a stale one.
+        tabs = [
+            {"type": "page", "url": "vscode-file://a", "title": "money.py - L1-x - Qoder CN IDE"},
+            {"type": "page", "url": "vscode-file://b", "title": "money.py - L1-x - Qoder CN IDE"},
+        ]
+        with self.assertRaises(cdp.AmbiguousTarget) as cm:
+            cdp.pick_target(tabs, title_match="L1-x")
+        self.assertIn("2 windows match", str(cm.exception))
+        self.assertIn("close the extra window", str(cm.exception))
+
     def test_no_target_returns_none(self):
         self.assertIsNone(cdp.pick_target([], None))
         self.assertIsNone(cdp.pick_target(

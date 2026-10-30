@@ -15,14 +15,72 @@ products lives here instead of being copied into every drive_*.py:
 from __future__ import annotations
 
 import json
+import re
 import subprocess
 import sys
 import time
+import urllib.request
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 CDP_SCRIPT = REPO / "harness" / "cdp.py"
+
+
+def devtools_version(port: int) -> dict:
+    """`/json/version` for one app: Browser/User-Agent carry its version.
+
+    Results used to say only "Qoder CN", so a UI regression and a model
+    regression looked the same a week later. Best effort: an unreachable port
+    returns {} instead of failing the run.
+    """
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/json/version", timeout=5
+        ) as fh:
+            return json.load(fh)
+    except Exception:  # noqa: BLE001 - attribution must never abort a run
+        return {}
+
+
+APP_VERSION_SKIP = {"mozilla", "chrome", "chromium", "safari", "electron",
+                    "applewebkit", "gecko"}
+
+
+def app_version(value: str) -> str:
+    """Product version from a DevTools Browser / User-Agent string.
+
+    'QoderCN/1.37.0 Chrome/148...' -> '1.37.0'. Engine tokens are skipped, so
+    a UA with no product prefix yields '' instead of reporting the browser.
+    """
+    for match in re.finditer(r"([A-Za-z][A-Za-z0-9 ._-]*?)/(\d+\.\d+(?:\.\d+)*)", value or ""):
+        if match.group(1).strip().lower() not in APP_VERSION_SKIP:
+            return match.group(2)
+    return ""
+
+
+def repo_dirty() -> bool:
+    """True when the harness checkout has uncommitted changes."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO), "status", "--porcelain"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return proc.returncode == 0 and bool(proc.stdout.strip())
+    except (OSError, subprocess.SubprocessError):
+        return False
+
+
+def repo_sha() -> str:
+    """Short HEAD of the harness checkout, for the run's provenance."""
+    try:
+        proc = subprocess.run(
+            ["git", "-C", str(REPO), "rev-parse", "--short", "HEAD"],
+            capture_output=True, text=True, timeout=5,
+        )
+        return proc.stdout.strip() if proc.returncode == 0 else ""
+    except (OSError, subprocess.SubprocessError):
+        return ""
 
 
 def log(path, event, **fields):
@@ -43,6 +101,27 @@ class Cdp:
     def __init__(self, argv, tmp_name="_cdp_tmp.js"):
         self.argv = list(argv)
         self.tmp = HERE / tmp_name
+
+    def port(self):
+        """DevTools port from argv, or 0 when the client binds no port."""
+        argv = self.argv
+        if "--port" in argv:
+            try:
+                return int(argv[argv.index("--port") + 1])
+            except (IndexError, ValueError):
+                return 0
+        return 0
+
+    def click_label(self, label, timeout=60):
+        """Click a label with a real pointer, in one cdp.py process.
+
+        `clickel` finds the element and dispatches the mouse events itself, so
+        the rect cannot go stale between the two steps. Calling eval here and
+        clickxy there is a race: while the chat re-renders, the click lands on
+        a neighbour. Returns "clicked" or "not found".
+        """
+        proc = self.run("clickel", label, timeout=timeout)
+        return "clicked" if proc.returncode == 0 else "not found"
 
     def run(self, op, arg=None, timeout=90, check=False):
         cmd = self.argv + [op] + ([arg] if arg else [])

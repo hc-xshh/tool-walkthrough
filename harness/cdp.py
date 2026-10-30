@@ -144,6 +144,10 @@ def _log(op, target, status, started, screenshot=None, detail=""):
         fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
+class AmbiguousTarget(SystemExit):
+    """Several windows match the filter: refuse instead of guessing."""
+
+
 def pick_target(tabs, match=None, kind="page", title_match=None):
     """Pick the main app page, not a pet/helper/empty target.
 
@@ -157,6 +161,16 @@ def pick_target(tabs, match=None, kind="page", title_match=None):
         pages = [t for t in pages if match in (t.get("url") or "")]
     if title_match:
         pages = [t for t in pages if title_match in (t.get("title") or "")]
+        if len(pages) > 1:
+            # Two windows with the same title used to be resolved by score,
+            # silently: max() returns the first one. The driver would then
+            # type into a stale session and the run would be graded as if the
+            # model had failed.
+            titles = sorted({(t.get("title") or "?") for t in pages})
+            raise AmbiguousTarget(
+                f"{len(pages)} windows match title {title_match!r} ({', '.join(titles)}); "
+                "close the extra window(s) and rerun instead of guessing"
+            )
     if not pages:
         return None
 

@@ -25,7 +25,10 @@ EVAL = HERE.parent
 sys.path.insert(0, str(HERE))
 import dialogs  # noqa: E402  (same directory; rules live there)
 import stall  # noqa: E402  (same directory; stall diagnostics)
-from driver_core import CDP_SCRIPT, Cdp, log, wait_for  # noqa: E402
+from driver_core import (  # noqa: E402
+    CDP_SCRIPT, Cdp, app_version, devtools_version, log, repo_dirty, repo_sha,
+    wait_for,
+)
 
 CDP = Cdp([sys.executable, str(CDP_SCRIPT), "--port", "9444"], "_qoder_tmp.js")
 EDITOR = '[contenteditable="true"]'
@@ -372,52 +375,81 @@ def send_prompt(prompt, log_path):
     return True
 
 
-def approve_native(label):
-    """Click the approval button with the real pointer; its split menu needs a second click."""
-    rect = CDP.js(f"""(() => {{
-      const els = Array.from(document.querySelectorAll('button,[role="button"]'))
+def element_rect(label, scope="button,[role=\"button\"],div,span"):
+    """Centre of the last visible element whose exact text is `label`."""
+    return CDP.js(f"""(() => {{
+      const els = Array.from(document.querySelectorAll({json.dumps(scope)}))
         .filter(e => e.offsetParent !== null && (e.innerText || '').trim() === {json.dumps(label)});
       const el = els[els.length - 1];
       if (!el) return null;
       const r = el.getBoundingClientRect();
       return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}};
     }})()""")
-    if not isinstance(rect, dict):
-        return False
-    CDP.run("clickxy", f"{rect['x']},{rect['y']}")
+
+
+def approve_native(label, log_path=None):
+    """Click the approval button with the real pointer; the split menu needs a second click.
+
+    `cdp.py clickel` finds the element and dispatches the click in one process,
+    so the rect cannot go stale while the chat re-renders. The coordinate path
+    below is the fallback for a label `clickel` refuses; when it fires, say so
+    in the trace instead of hiding a race that could hit a neighbour.
+    """
+    if CDP.click_label(label) != "clicked":
+        rect = element_rect(label)
+        if not isinstance(rect, dict):
+            return False
+        CDP.run("clickxy", f"{rect['x']},{rect['y']}")
+        if log_path:
+            log(log_path, "click_race", label=label, via="clickxy")
     time.sleep(0.6)
     for item in ("允许一次", "本次任务允许"):
-        item_rect = CDP.js(f"""(() => {{
-          const els = Array.from(document.querySelectorAll('button,div,span'))
-            .filter(e => e.offsetParent !== null && (e.innerText || '').trim() === {json.dumps(item)});
-          const el = els[els.length - 1];
-          if (!el) return null;
-          const r = el.getBoundingClientRect();
-          return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}};
-        }})()""")
+        if CDP.click_label(item) == "clicked":
+            return True
+        item_rect = element_rect(item)
         if isinstance(item_rect, dict):
             CDP.run("clickxy", f"{item_rect['x']},{item_rect['y']}")
+            if log_path:
+                log(log_path, "click_race", label=item, via="clickxy")
             return True
     return True
 
 
-def turn_active():
-    """True while Qoder is working on a turn.
+def composer_state():
+    """'idle' | 'running' | 'missing' from the composer's send button.
 
-    1.37 never prints "正在执行中": the composer's send button becomes "停止"
-    for the whole turn, including while a run prompt waits for a click. Without
-    this the finished run never looked finished and every attempt waited out
-    the whole timebox.
+    Qoder 1.37 never prints "正在执行中". The send button is "停止" for the
+    whole turn (including while a run prompt waits for a click) and
+    "Send message" otherwise, so the button is the state machine.
     """
-    return bool(CDP.js("""(() => {
+    state = CDP.js("""(() => {
+      const idle = document.querySelector('[aria-label="Send message"], [aria-label="发送"]');
+      if (idle && idle.offsetParent !== null) return 'idle';
       const stop = document.querySelector('[aria-label="停止"], [aria-label="Stop"]');
-      return !!(stop && stop.offsetParent !== null);
-    })()"""))
+      if (stop && stop.offsetParent !== null) return 'running';
+      return 'missing';
+    })()""")
+    return state if isinstance(state, str) else "missing"
 
 
-def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
+def turn_active():
+    """True while Qoder is working on a turn."""
+    return composer_state() == "running"
+
+
+def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180,
+              start_timeout=90):
+    """Poll until the turn ends, or say which signal was missing.
+
+    `start_timeout`: a turn that never shows the stop button (and never changes
+    the page) is a failed submit, not a slow model. Bail out early instead of
+    burning the whole timebox on it.
+    """
     deadline = time.time() + timebox
     started = time.time()
+    initial = page_text()
+    saw_output = False
+    phase = ""
     last_report = started
     next_stall = 0.0
     stall_reports = 0
@@ -428,20 +460,33 @@ def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
     last_change = time.time()
     approvals = 0
     run_clicks = 0
+    running = False
+    current = initial
     while time.time() < deadline:
         now = time.time()
         current = page_text()
+        if current != initial:
+            saw_output = True
         if current != last:
             last, last_change = current, now
             run_clicks = 0
         streaming = "正在执行中" in current  # older Qoder builds
-        running = streaming or turn_active()
+        running = streaming or turn_active()  # short-circuits on the old marker
         if running:
             seen_active = True
+        if not seen_active and not saw_output and now - started >= start_timeout:
+            # Nothing moved and no turn ever started: the prompt did not get
+            # submitted. Say so now instead of spending the whole timebox.
+            phase = "never_started"
+            log(log_path, "never_started", seconds=round(now - started, 1),
+                approvals=approvals)
+            print(f"[qoder] {int(now - started)}s 内这一轮没有开始（没出现停止按钮，界面也没变）",
+                  flush=True)
+            break
         label = CDP.pending_label(approval_labels(current))
         run_label = None if label else click_run_confirm()
         if label:
-            approve_native(label)
+            approve_native(label, log_path)
             approvals += 1
             log(log_path, "approve", label=label)
             time.sleep(2)
@@ -478,7 +523,7 @@ def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
                 if click:
                     CDP.run("clickxy", f"{click['x']},{click['y']}")
                 else:
-                    approve_native(report["label"])
+                    approve_native(report["label"], log_path)
                 approvals += 1
                 log(log_path, "stall_handled", label=report["label"],
                     reason=report.get("reason"), via=report.get("via"))
@@ -514,7 +559,20 @@ def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
         if debug:
             print("STATE:", current.strip()[-160:].replace("\n", " | "))
         time.sleep(2)
-    log(log_path, "timeout", approvals=approvals)
+
+    if not phase:
+        if not seen_active and not saw_output:
+            phase = "never_started"
+        elif running:
+            phase = "turn_still_running"
+        elif "由 AI 生成" not in current:
+            phase = "ended_without_marker"
+        else:
+            phase = "ended_but_unstable"
+    log(log_path, "timeout", phase=phase, approvals=approvals,
+        elapsed=round(time.time() - started, 1))
+    print(f"[qoder] 超时（{phase}，{int(time.time() - started)}s，"
+          f"界面 {int(time.time() - last_change)}s 无变化，approvals={approvals}）", flush=True)
     return False, approvals
 
 
@@ -532,6 +590,8 @@ def main():
     ap.add_argument("--debug", action="store_true")
     ap.add_argument("--stall-timeout", type=int, default=180,
                     help="界面多久没变化就截图/OCR 诊断（秒；0 关闭）")
+    ap.add_argument("--start-timeout", type=int, default=90,
+                    help="多久还没看到「停止」按钮就判这一轮没发出去（秒）")
     ap.add_argument("--skip-workspace", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="只报告 CDP/界面结构，不点击、不发送")
@@ -544,29 +604,60 @@ def main():
         "_qoder_tmp.js",
     )
 
+    version = devtools_version(CDP.port())
+    ua = version.get("User-Agent") or ""
+    app_ver = app_version(ua) or app_version(version.get("Browser") or "")
+    harness_sha = repo_sha()
+    harness_dirty = repo_dirty()
+
     probe = CDP.run("text", timeout=15)
     if probe.returncode != 0:
         detail = ((probe.stderr or "") + (probe.stdout or "")).strip()[-400:]
-        raise SystemExit(
-            "cannot reach Qoder CN over CDP on port 9444.\n"
-            "Start Qoder CN with --remote-debugging-port=9444 first, e.g.\n"
-            "  /usr/share/qoder-cn-ide/qoder-cn-ide --remote-debugging-port=9444\n"
-            f"detail: {detail}"
-        )
+        if not version:
+            raise SystemExit(
+                "cannot reach Qoder CN over CDP on port 9444.\n"
+                "Start Qoder CN with --remote-debugging-port=9444 first, e.g.\n"
+                "  /usr/share/qoder-cn-ide/qoder-cn-ide --remote-debugging-port=9444\n"
+                f"detail: {detail}"
+            )
+        if "no page target" in detail or "windows match title" in detail:
+            # The app is up, so the problem is which window: a missing title,
+            # or two windows with the same one (the driver refuses to guess).
+            raise SystemExit(
+                "cannot attach to the task window — the app is running but no single "
+                f"window matches this task:\n{detail}\n"
+                "close the extra Qoder window(s) or open the task folder in Qoder, then rerun"
+            )
+        raise SystemExit(f"cannot attach to Qoder CN over CDP: {detail}")
 
     if a.check:
         text = page_text()
         report = {
             "cdp": True,
+            "app": a.tool,
+            "app_version": app_ver,
+            "user_agent": ua,
             "chars": len(text),
             "new_task_labels": {label: label in text for label in NEW_TASK_LABELS},
             "trust_dialog": "信任此作者" in text,
             "editor": isinstance(editor_info(), dict),
+            "composer": composer_state(),
             "workspace_chip": Path(a.workdir).name in text,
             "dialogs": dialogs.classify(text),
         }
+        problems = []
+        if not report["editor"]:
+            problems.append("找不到输入框（[contenteditable]）")
+        if report["composer"] == "missing":
+            problems.append("找不到发送按钮（Send message / 停止）")
+        if report["composer"] == "running":
+            problems.append("应用还在上一轮里（按钮是「停止」）")
+        if a.skip_workspace and not report["workspace_chip"]:
+            problems.append("窗口标题不含任务目录名，驱动会连到别的窗口")
+        report["problems"] = problems
+        report["ok"] = not problems
         print(json.dumps(report, ensure_ascii=False, indent=2))
-        return 0
+        return 0 if report["ok"] else 1
 
     workdir = Path(a.workdir).resolve()
     spec = json.loads((EVAL / "tasks" / f"{a.task}.json").read_text(encoding="utf-8"))
@@ -577,6 +668,13 @@ def main():
     log_path = Path(a.out).parent / (Path(a.out).stem + ".trace.jsonl")
     log_path.parent.mkdir(parents=True, exist_ok=True)
     log_path.write_text("", encoding="utf-8")
+    # Provenance first: a verdict is only comparable when the app version and
+    # the driver commit are on the record next to it.
+    log(log_path, "start", task=a.task, rep=a.rep, workdir=str(workdir),
+        app=a.tool, app_version=app_ver, user_agent=ua,
+        driver=Path(__file__).name, harness_sha=harness_sha, harness_dirty=harness_dirty)
+    print(f"[qoder] {a.tool} {app_ver or '(unknown version)'} · "
+          f"{Path(__file__).name} {harness_sha}{' (dirty)' if harness_dirty else ''}")
 
     if a.prepare:
         cmd = [sys.executable, str(HERE / "prepare.py"), "--task", a.task, "--workdir", str(workdir)]
@@ -599,13 +697,18 @@ def main():
     started = time.time()
     if not new_task(log_path):
         raise SystemExit("cannot start a new task")
+    if not wait_for(lambda: composer_state() != "missing", 15, label="composer"):
+        raise SystemExit("输入框/发送按钮不见了，界面没准备好；先用 --check 看一眼")
+    if composer_state() == "running":
+        raise SystemExit("上一轮还没结束（发送按钮是「停止」）；等它结束或重启应用再跑")
 
     ok = True
     approvals = 0
     for index, prompt in enumerate(prompts, 1):
         if not send_prompt(prompt, log_path):
             raise SystemExit(f"prompt insert failed (round {index})")
-        ok, approvals = wait_done(log_path, a.timebox, a.idle, a.debug, a.stall_timeout)
+        ok, approvals = wait_done(log_path, a.timebox, a.idle, a.debug,
+                                  a.stall_timeout, a.start_timeout)
         if not ok:
             log(log_path, "round_timeout", round=index)
             break
@@ -616,7 +719,13 @@ def main():
         "--task", a.task, "--workdir", str(workdir), "--before", str(before),
         "--out", a.out, "--rep", str(a.rep), "--tool", a.tool,
         "--duration", str(elapsed), "--interventions", str(approvals),
+        # A run that never got an answer is "not measured", not a model failure.
+        "--status", "ok" if ok else "timeout",
+        "--app-version", app_ver, "--app-ua", ua,
+        "--driver", Path(__file__).name, "--harness-sha", harness_sha,
     ]
+    if harness_dirty:
+        grade_cmd.append("--harness-dirty")
     g = subprocess.run(grade_cmd, capture_output=True, text=True, encoding="utf-8")
     print((g.stdout or "").strip()[-2000:])
     if g.returncode != 0:

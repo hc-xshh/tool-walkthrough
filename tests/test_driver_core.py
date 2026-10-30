@@ -70,6 +70,33 @@ class CdpTest(unittest.TestCase):
         self.cdp.js = lambda source, timeout=60: "允许" if '"允许"' in source else None
         self.assertEqual(self.cdp.pending_label(("允许", "运行")), "允许")
 
+    def test_port_comes_from_the_prefix(self):
+        self.assertEqual(self.cdp.port(), 9999)
+        self.assertEqual(driver_core.Cdp([sys.executable, "cdp.py"]).port(), 0)
+
+    def test_click_label_uses_clickel_in_one_process(self):
+        self.replies = [(0, "clicked at 1,2")]
+        self.assertEqual(self.cdp.click_label("接受"), "clicked")
+        self.assertEqual(self.calls[0][0][-2:], ["clickel", "接受"])
+        self.replies = [(1, "not found")]
+        self.assertEqual(self.cdp.click_label("接受"), "not found")
+
+
+class AppVersionTest(unittest.TestCase):
+    def test_reads_the_product_version_from_a_qoder_ua(self):
+        ua = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) "
+              "QoderCN/1.37.0 Chrome/148.0.7778.97 Electron/42.2.0 Safari/537.36")
+        self.assertEqual(driver_core.app_version(ua), "1.37.0")
+
+    def test_skips_engine_tokens(self):
+        ua = ("Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 Chrome/148.0.7778.97 "
+              "Safari/537.36")
+        self.assertEqual(driver_core.app_version(ua), "")
+
+    def test_empty_or_missing_value(self):
+        self.assertEqual(driver_core.app_version(""), "")
+        self.assertEqual(driver_core.app_version(None), "")
+
 
 class WaitForTest(unittest.TestCase):
     def test_returns_true_when_predicate_passes(self):

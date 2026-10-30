@@ -33,6 +33,15 @@ code-eval/
 
 Qoder CN 1.37 的确认框和完成判据都换过皮：命令确认是拆分按钮「终端运行 Ctrl ↩」（快捷键并进了按钮文字），按前缀定位，并在同一次 JS 里点元素本身——先量坐标、再从另一个进程点，会赶上聊天区重排，点到旁边的「开启终端自动执行」开关；那个开关弹出的「确定开启终端自动执行？」一律取消（自动执行是全局设置，也会把这里要统计的人工介入数抹平）。一轮是否结束看输入框按钮：工作期间是「停止」，结束变回 `Send message`，旧版的「正在执行中」文案只作兼容。
 
+每次尝试的归因和“没测成”的判定：
+
+- 结果里有 `env`（被测应用版本、UA、驱动文件名、harness commit），trace 第一条 `start` 事件同样记录；没有这些，事后分不清“模型不行”和“驱动没适配”。
+- `drive_qoder.py --check` 是断言而不是报告：输入框、发送按钮、窗口标题、应用是否空闲，缺一项退出码 1；正式跑之前也做同样检查。
+- 开头 90 秒还没出现「停止」按钮（`--start-timeout`）就判这一轮没发出去，不再等满 timebox；超时事件带 `phase`（`never_started` / `turn_still_running` / `ended_without_marker` / `ended_but_unstable`），这类 run 判分状态是 `timeout`（没测成），不是模型失败。
+- 窗口标题匹配到多个时 `cdp.py` 直接报错，不再按分数挑一个——连错窗口会产出看起来正常的无效数据。
+- 点击统一走 `cdp.py clickel`（找元素和发点击在同一个进程里）；坐标点击只作兜底，触发时在 trace 里记一条 `click_race`。
+- `tests/dom_replay.mjs` 用真实录下的 DOM 回放驱动自己的选择器（`tests/fixtures/qoder-1.37-ui.json`），改版时不用真机就能先红灯。
+
 已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）、
 [`reports/2026-10-29-codex-l10-l12.md`](reports/2026-10-29-codex-l10-l12.md)（Codex CLI 0.163.0 / deepseek-flash，
 L10–L12 各 3 次，9/9 通过）。Qoder CN 0.4.9 与四家横向（Trae / Qoder / Cursor / Codex）也跑过，但那两份报告没有入库，只在本机 `runs/` 下——不要当成可引用的公开结论。

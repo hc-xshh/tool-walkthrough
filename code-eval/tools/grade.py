@@ -547,6 +547,12 @@ def main():
     ap.add_argument("--final-message", default=None,
                     help="agent 的最终交付说明（用于 claims 对账）")
     ap.add_argument("--no-clone", action="store_true", help="跳过干净副本复现检查")
+    ap.add_argument("--app-version", default=None, help="被测应用版本（驱动回填）")
+    ap.add_argument("--app-ua", default=None, help="被测应用 UA（驱动回填）")
+    ap.add_argument("--driver", default=None, help="驱动文件名（驱动回填）")
+    ap.add_argument("--harness-sha", default=None, help="驱动所在仓库的 commit（驱动回填）")
+    ap.add_argument("--harness-dirty", action="store_true",
+                    help="驱动的仓库有未提交改动（无法只靠 commit 复现）")
     a = ap.parse_args()
 
     spec = json.loads((EVAL_ROOT / "tasks" / f"{a.task}.json").read_text(encoding="utf-8"))
@@ -566,6 +572,21 @@ def main():
         "run_status": a.status,
         "rounds": a.rounds,
     }
+    # Provenance: a verdict is only comparable when the app version and the
+    # driver are known. Optional, so older drivers keep producing valid results.
+    env = {
+        key: value
+        for key, value in (
+            ("app_version", a.app_version),
+            ("user_agent", a.app_ua),
+            ("driver", a.driver),
+            ("harness_sha", a.harness_sha),
+            ("harness_dirty", True if a.harness_dirty else None),
+        )
+        if value
+    }
+    if env:
+        result["env"] = env
 
     changes = snap.diff(a.before, workdir)
     patch = changes.pop("patch", "")

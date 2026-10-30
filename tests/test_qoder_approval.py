@@ -1,7 +1,10 @@
 """Which labels drive_qoder may click during a run."""
 from __future__ import annotations
 
+import json
 import sys
+import tempfile
+import time
 import unittest
 from pathlib import Path
 
@@ -79,7 +82,9 @@ if __name__ == "__main__":
     unittest.main()
 
 
-class TurnActiveTest(unittest.TestCase):
+class ComposerStateTest(unittest.TestCase):
+    """Qoder 1.37 has no "正在执行中" text; the send button is the state."""
+
     class FakeCdp:
         def __init__(self, reply):
             self.reply = reply
@@ -91,15 +96,70 @@ class TurnActiveTest(unittest.TestCase):
         original = drive_qoder.CDP
         drive_qoder.CDP = self.FakeCdp(reply)
         try:
-            return drive_qoder.turn_active()
+            return drive_qoder.composer_state()
         finally:
             drive_qoder.CDP = original
 
-    def test_stop_button_means_the_turn_is_running(self):
-        self.assertTrue(self.check(True))
+    def test_stop_button_is_running(self):
+        self.assertEqual(self.check("running"), "running")
 
-    def test_no_stop_button_means_the_turn_ended(self):
-        self.assertFalse(self.check(False))
+    def test_send_button_is_idle(self):
+        self.assertEqual(self.check("idle"), "idle")
 
-    def test_cdp_failure_is_not_running(self):
-        self.assertFalse(self.check(None))
+    def test_missing_button_is_not_a_state(self):
+        self.assertEqual(self.check(None), "missing")
+
+    def test_turn_active_follows_the_composer(self):
+        original = drive_qoder.CDP
+        drive_qoder.CDP = self.FakeCdp("running")
+        try:
+            self.assertTrue(drive_qoder.turn_active())
+            drive_qoder.CDP = self.FakeCdp("idle")
+            self.assertFalse(drive_qoder.turn_active())
+        finally:
+            drive_qoder.CDP = original
+
+
+class WaitDonePhaseTest(unittest.TestCase):
+    """A run that never starts must say so, not burn the whole timebox."""
+
+    class StubCdp:
+        def pending_label(self, labels):
+            return None
+
+    def setUp(self):
+        self.real = {name: getattr(drive_qoder, name) for name in
+                     ("page_text", "turn_active", "click_run_confirm", "guard_dialogs", "CDP")}
+        drive_qoder.CDP = self.StubCdp()
+        drive_qoder.click_run_confirm = lambda: None
+        drive_qoder.guard_dialogs = lambda *args, **kwargs: "ok"
+        self.tmp = tempfile.TemporaryDirectory()
+        self.log = Path(self.tmp.name) / "x.trace.jsonl"
+        self.log.write_text("", encoding="utf-8")
+
+    def tearDown(self):
+        for name, value in self.real.items():
+            setattr(drive_qoder, name, value)
+        self.tmp.cleanup()
+
+    def events(self):
+        return [json.loads(line) for line in self.log.read_text(encoding="utf-8").splitlines()]
+
+    def test_never_started_bails_out_before_the_timebox(self):
+        drive_qoder.page_text = lambda: "unchanged page"
+        drive_qoder.turn_active = lambda: False
+        started = time.time()
+        ok, approvals = drive_qoder.wait_done(self.log, timebox=600, start_timeout=1)
+        self.assertFalse(ok)
+        self.assertLess(time.time() - started, 30)
+        self.assertEqual([e["event"] for e in self.events()], ["never_started", "timeout"])
+        self.assertEqual(self.events()[-1]["phase"], "never_started")
+
+    def test_timeout_says_the_turn_was_still_running(self):
+        counter = iter(range(10_000))
+        drive_qoder.page_text = lambda: f"streaming {next(counter)}"
+        drive_qoder.turn_active = lambda: True
+        ok, _ = drive_qoder.wait_done(self.log, timebox=1, start_timeout=90)
+        self.assertFalse(ok)
+        self.assertEqual(self.events()[-1]["event"], "timeout")
+        self.assertEqual(self.events()[-1]["phase"], "turn_still_running")
