@@ -101,6 +101,8 @@ class Cdp:
     def __init__(self, argv, tmp_name="_cdp_tmp.js"):
         self.argv = list(argv)
         self.tmp = HERE / tmp_name
+        self.target_id = None
+        self._warned = False
 
     def port(self):
         """DevTools port from argv, or 0 when the client binds no port."""
@@ -111,6 +113,43 @@ class Cdp:
             except (IndexError, ValueError):
                 return 0
         return 0
+
+    def pin(self):
+        """Resolve the window once and pin its target id, or return None.
+
+        `cdp.py` re-selects by flag on every call. A second window with the
+        same title — Qoder restores windows on launch, and a new run opens the
+        same task folder name — would silently move the next call to another
+        window mid-run. Pinning keeps every call on the window the run started
+        in; if a duplicate exists already, say so instead of guessing.
+        """
+        argv, port = self.argv, self.port()
+        if not port:
+            return None
+        try:
+            with urllib.request.urlopen(
+                f"http://127.0.0.1:{port}/json/list", timeout=5
+            ) as fh:
+                pages = [t for t in json.load(fh) if t.get("type") == "page"]
+        except Exception:  # noqa: BLE001 - selection failures surface elsewhere
+            return None
+        if "--match-title" in argv:
+            want = argv[argv.index("--match-title") + 1]
+            pages = [t for t in pages if want in (t.get("title") or "")]
+        elif "--match" in argv:
+            want = argv[argv.index("--match") + 1]
+            pages = [t for t in pages if want in (t.get("url") or "")]
+        else:
+            return None
+        if len(pages) > 1:
+            raise RuntimeError(
+                f"{len(pages)} windows match {want!r}; close the extra window(s) and rerun"
+            )
+        if not pages:
+            return None
+        self.target_id = pages[0]["id"]
+        self.argv = argv + ["--target-id", self.target_id]
+        return self.target_id
 
     def click_label(self, label, timeout=60):
         """Click a label with a real pointer, in one cdp.py process.
@@ -142,6 +181,13 @@ class Cdp:
         finally:
             self.tmp.unlink(missing_ok=True)
         if proc.returncode != 0:
+            if not self._warned:
+                # Say why once: an ambiguity or a dead target otherwise shows
+                # up as "composer missing" three steps later.
+                self._warned = True
+                detail = ((proc.stderr or "") + (proc.stdout or "")).strip().splitlines()
+                if detail:
+                    print(f"cdp eval failed: {detail[-1][:300]}", file=sys.stderr)
             return None
         raw = proc.stdout.strip()
         try:

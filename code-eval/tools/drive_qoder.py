@@ -630,6 +630,11 @@ def main():
             )
         raise SystemExit(f"cannot attach to Qoder CN over CDP: {detail}")
 
+    try:
+        target_id = CDP.pin()
+    except RuntimeError as exc:
+        raise SystemExit(f"cannot pin the Qoder window: {exc}")
+
     if a.check:
         text = page_text()
         report = {
@@ -643,6 +648,7 @@ def main():
             "editor": isinstance(editor_info(), dict),
             "composer": composer_state(),
             "workspace_chip": Path(a.workdir).name in text,
+            "target_id": target_id,
             "dialogs": dialogs.classify(text),
         }
         problems = []
@@ -672,7 +678,8 @@ def main():
     # the driver commit are on the record next to it.
     log(log_path, "start", task=a.task, rep=a.rep, workdir=str(workdir),
         app=a.tool, app_version=app_ver, user_agent=ua,
-        driver=Path(__file__).name, harness_sha=harness_sha, harness_dirty=harness_dirty)
+        driver=Path(__file__).name, harness_sha=harness_sha, harness_dirty=harness_dirty,
+        target_id=target_id)
     print(f"[qoder] {a.tool} {app_ver or '(unknown version)'} · "
           f"{Path(__file__).name} {harness_sha}{' (dirty)' if harness_dirty else ''}")
 

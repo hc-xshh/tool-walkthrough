@@ -113,7 +113,7 @@ def launch(app_id: str, restart: bool = False, wait: float = 25.0) -> dict:
     if not current["installed"]:
         raise ValueError(f"没有找到 {app['label']} 的可执行文件；在 config.json 里配 "
                          f"apps.{app_id}.exe，或设环境变量 WT_{app_id.upper()}_EXE")
-    if current["port_open"]:
+    if current["port_open"] and not restart:
         return {**current, "action": "already"}
 
     if current["running"]:
@@ -153,14 +153,35 @@ def launch(app_id: str, restart: bool = False, wait: float = 25.0) -> dict:
                      f"{wait:.0f}s 内端口 {app['port']} 没起来；看 {LOG_DIR / (app_id + '.log')}")
 
 
-def _page_titles(port: int) -> list[str]:
+def _page_targets(port: int) -> list[dict]:
     import json
     import urllib.request
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{port}/json/list", timeout=3) as resp:
-            return [str(t.get("title") or "") for t in json.loads(resp.read().decode("utf-8"))]
+            return [t for t in json.loads(resp.read().decode("utf-8"))
+                    if t.get("type") == "page"]
     except Exception:  # noqa: BLE001 - verification only
         return []
+
+
+def _page_titles(port: int) -> list[str]:
+    return [str(t.get("title") or "") for t in _page_targets(port)]
+
+
+def _close_target(port: int, target_id: str) -> bool:
+    """Close one window through the DevTools HTTP API (no websocket needed)."""
+    import urllib.request
+    try:
+        with urllib.request.urlopen(
+            f"http://127.0.0.1:{port}/json/close/{target_id}", timeout=3
+        ) as resp:
+            return "closing" in resp.read().decode("utf-8", "replace").lower()
+    except Exception:  # noqa: BLE001 - the caller verifies by re-listing
+        return False
+
+
+# How long a stale window may take to disappear before we give up.
+CLOSE_TIMEOUT = 8.0
 
 
 def open_folder(app_id: str, path: Path, wait: float = 10.0) -> dict:
@@ -174,18 +195,48 @@ def open_folder(app_id: str, path: Path, wait: float = 10.0) -> dict:
         raise ValueError(f"{app['label']} 还没带调试端口启动；先点「启动 / 重启」")
     if not app.get("open") or not Path(app["open"][0]).exists():
         raise ValueError(f"{app['label']} 没有配置命令行打开方式")
+    port = int(app["port"])
+    # The window title only carries the folder name, so a second window with
+    # the same name makes every later CDP call ambiguous — and the driver
+    # would attach to the old window while the run thinks it talks to the new
+    # one. Qoder restores its windows on launch, so stale ones are the norm:
+    # close them here instead of making every run a manual cleanup.
+    stale = [t for t in _page_targets(port) if path.name in (t.get("title") or "")]
+    for target in stale:
+        _close_target(port, target["id"])
+    if stale:
+        deadline = time.time() + CLOSE_TIMEOUT
+        while time.time() < deadline:
+            if not [t for t in _page_targets(port) if path.name in (t.get("title") or "")]:
+                break
+            time.sleep(0.5)
+        else:
+            raise ValueError(
+                f"旧的「{path.name}」窗口关不掉（可能有未保存改动）。"
+                "手动关掉它再试；两个同名窗口会让驱动连错一个。"
+            )
+        # Closing the last window quits the app. Bring it back with the debug
+        # port first: the `-n` below would otherwise start an instance we
+        # cannot drive, and the run would fail after a minute of retries.
+        if not _port_open(port):
+            launch(app_id, restart=True)
+    before = {t.get("id") for t in _page_targets(port)}
     subprocess.Popen([*app["open"], str(path)], cwd=str(Path.home()),
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
 
-    # Trust but verify: the window title carries the folder name, so a window
-    # that never opened must not be reported as success.
+    # Trust but verify: the window title carries the folder name, and only a
+    # target that did not exist before may count as the window we just opened.
     deadline = time.time() + wait
     while time.time() < deadline:
-        titles = _page_titles(int(app["port"]))
-        if any(path.name in title for title in titles):
+        after = _page_targets(port)
+        hit = next((t for t in after
+                    if t.get("id") not in before and path.name in (t.get("title") or "")),
+                   None)
+        if hit:
             return {"opened": str(path), "app": app_id, "verified": True,
-                    "titles": titles}
+                    "target_id": hit.get("id"),
+                    "titles": [t.get("title") or "" for t in after]}
         time.sleep(0.5)
     raise ValueError(f"{app['label']} 没有出现「{path.name}」窗口；"
                      f"可能被旧窗口拦住了，先重启应用再试")

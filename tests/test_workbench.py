@@ -96,6 +96,102 @@ class AppsTest(unittest.TestCase):
                 apps.launch("qoder", restart=False)
         self.assertIn("重启", str(ctx.exception))
 
+    def test_launch_restart_replaces_a_running_instance(self):
+        # The button has to work while the app is up: restarting is how a user
+        # clears stale windows (two windows with one task name break the driver).
+        running = {"id": "qoder", "label": "Qoder CN", "installed": True,
+                   "exe": "/bin/true", "port": 9444, "port_open": True,
+                   "running": True, "pid": 1234, "debug_flag": True,
+                   "can_open_folder": True}
+        with mock.patch.object(apps, "status", return_value=running), \
+                mock.patch.object(apps, "_processes", side_effect=[[(1234, "cmd")], [], []]), \
+                mock.patch.object(apps, "_port_open", return_value=True), \
+                mock.patch.object(apps.subprocess, "Popen",
+                                  return_value=mock.Mock(pid=4321)) as popen, \
+                mock.patch.object(apps.os, "kill") as kill:
+            result = apps.launch("qoder", restart=True)
+        kill.assert_called_once_with(1234, apps.signal.SIGTERM)
+        popen.assert_called_once()
+        self.assertEqual(result["action"], "launched")
+
+    def test_launch_without_restart_is_a_noop_while_the_port_is_open(self):
+        running = {"id": "qoder", "label": "Qoder CN", "installed": True,
+                   "exe": "/bin/true", "port": 9444, "port_open": True,
+                   "running": True, "pid": 1234, "debug_flag": True,
+                   "can_open_folder": True}
+        with mock.patch.object(apps, "status", return_value=running):
+            self.assertEqual(apps.launch("qoder", restart=False)["action"], "already")
+
+    def test_open_folder_closes_a_stale_window_with_the_same_name(self):
+        opened = {"id": "qoder", "label": "Qoder CN", "installed": True,
+                  "exe": "/bin/true", "port": 9444, "port_open": True,
+                  "running": True, "pid": 1234, "debug_flag": True,
+                  "can_open_folder": True}
+        stale = {"id": "old", "title": "money.py - L1-split-bill-r1 - Qoder CN IDE"}
+        fresh = {"id": "new", "title": "money.py - L1-split-bill-r1 - Qoder CN IDE"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "L1-split-bill-r1"
+            path.mkdir()
+            with mock.patch.object(apps, "status", return_value=opened), \
+                    mock.patch.object(apps, "APPS",
+                                      {"qoder": {**apps.APPS["qoder"], "open": ["/bin/true"]}}), \
+                    mock.patch.object(apps, "subprocess",
+                                      mock.Mock(Popen=mock.Mock(return_value=mock.Mock(pid=1)))), \
+                    mock.patch.object(apps, "_close_target", return_value=True) as close, \
+                    mock.patch.object(apps, "_port_open", return_value=True), \
+                    mock.patch.object(apps, "_page_targets",
+                                      side_effect=[[stale], [], [], [fresh]]):
+                result = apps.open_folder("qoder", path)
+        close.assert_called_once_with(9444, "old")
+        self.assertTrue(result["verified"])
+        self.assertEqual(result["target_id"], "new")
+
+    def test_open_folder_relaunches_the_app_when_closing_quit_it(self):
+        # Closing the last window ends the app; the `-n` call would then start
+        # an instance without the debug port and the run could not drive it.
+        opened = {"id": "qoder", "label": "Qoder CN", "installed": True,
+                  "exe": "/bin/true", "port": 9444, "port_open": True,
+                  "running": True, "pid": 1234, "debug_flag": True,
+                  "can_open_folder": True}
+        stale = {"id": "old", "title": "money.py - L1-split-bill-r1 - Qoder CN IDE"}
+        fresh = {"id": "new", "title": "money.py - L1-split-bill-r1 - Qoder CN IDE"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "L1-split-bill-r1"
+            path.mkdir()
+            with mock.patch.object(apps, "status", return_value=opened), \
+                    mock.patch.object(apps, "APPS",
+                                      {"qoder": {**apps.APPS["qoder"], "open": ["/bin/true"]}}), \
+                    mock.patch.object(apps, "subprocess",
+                                      mock.Mock(Popen=mock.Mock(return_value=mock.Mock(pid=1)))), \
+                    mock.patch.object(apps, "_close_target", return_value=True), \
+                    mock.patch.object(apps, "_port_open",
+                                      side_effect=[False, False, True]), \
+                    mock.patch.object(apps, "launch") as launch, \
+                    mock.patch.object(apps, "_page_targets",
+                                      side_effect=[[stale], [], [], [fresh]]):
+                result = apps.open_folder("qoder", path)
+        launch.assert_called_once_with("qoder", restart=True)
+        self.assertEqual(result["target_id"], "new")
+
+    def test_open_folder_gives_up_when_a_stale_window_will_not_close(self):
+        opened = {"id": "qoder", "label": "Qoder CN", "installed": True,
+                  "exe": "/bin/true", "port": 9444, "port_open": True,
+                  "running": True, "pid": 1234, "debug_flag": True,
+                  "can_open_folder": True}
+        stale = {"id": "old", "title": "money.py - L1-split-bill-r1 - Qoder CN IDE"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "L1-split-bill-r1"
+            path.mkdir()
+            with mock.patch.object(apps, "status", return_value=opened), \
+                    mock.patch.object(apps, "APPS",
+                                      {"qoder": {**apps.APPS["qoder"], "open": ["/bin/true"]}}), \
+                    mock.patch.object(apps, "_close_target", return_value=True), \
+                    mock.patch.object(apps, "CLOSE_TIMEOUT", 0.05), \
+                    mock.patch.object(apps, "_page_targets", return_value=[stale]):
+                with self.assertRaises(ValueError) as ctx:
+                    apps.open_folder("qoder", path)
+        self.assertIn("关不掉", str(ctx.exception))
+
     def test_open_folder_requires_the_debug_port(self):
         # Never touch a live IDE from a unit test: pretend the port is closed.
         closed = {"id": "qoder", "label": "Qoder CN", "installed": True,

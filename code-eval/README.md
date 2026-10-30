@@ -38,7 +38,7 @@ Qoder CN 1.37 的确认框和完成判据都换过皮：命令确认是拆分按
 - 结果里有 `env`（被测应用版本、UA、驱动文件名、harness commit），trace 第一条 `start` 事件同样记录；没有这些，事后分不清“模型不行”和“驱动没适配”。
 - `drive_qoder.py --check` 是断言而不是报告：输入框、发送按钮、窗口标题、应用是否空闲，缺一项退出码 1；正式跑之前也做同样检查。
 - 开头 90 秒还没出现「停止」按钮（`--start-timeout`）就判这一轮没发出去，不再等满 timebox；超时事件带 `phase`（`never_started` / `turn_still_running` / `ended_without_marker` / `ended_but_unstable`），这类 run 判分状态是 `timeout`（没测成），不是模型失败。
-- 窗口标题匹配到多个时 `cdp.py` 直接报错，不再按分数挑一个——连错窗口会产出看起来正常的无效数据。
+- 窗口标题匹配到多个时 `cdp.py` 直接报错，不再按分数挑一个——连错窗口会产出看起来正常的无效数据；驱动启动时把窗口的 target id 钉住，跑到一半又冒出同名窗口也不会中途换靶。
 - 点击统一走 `cdp.py clickel`（找元素和发点击在同一个进程里）；坐标点击只作兜底，触发时在 trace 里记一条 `click_race`。
 - `tests/dom_replay.mjs` 用真实录下的 DOM 回放驱动自己的选择器（`tests/fixtures/qoder-1.37-ui.json`），改版时不用真机就能先红灯。
 

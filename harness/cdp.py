@@ -148,7 +148,7 @@ class AmbiguousTarget(SystemExit):
     """Several windows match the filter: refuse instead of guessing."""
 
 
-def pick_target(tabs, match=None, kind="page", title_match=None):
+def pick_target(tabs, match=None, kind="page", title_match=None, target_id=None):
     """Pick the main app page, not a pet/helper/empty target.
 
     Electron apps expose several `page` targets (Qoder: desktop-pet first,
@@ -157,6 +157,12 @@ def pick_target(tabs, match=None, kind="page", title_match=None):
     """
     kinds = ("page", "iframe") if kind == "any" else (kind,)
     pages = [t for t in tabs if t.get("type") in kinds]
+    if target_id:
+        # Pinned by a driver that resolved its window once: never re-score.
+        pages = [t for t in pages if t.get("id") == target_id]
+        if not pages:
+            return None
+        return pages[0]
     if match:
         pages = [t for t in pages if match in (t.get("url") or "")]
     if title_match:
@@ -196,9 +202,9 @@ def pick_target(tabs, match=None, kind="page", title_match=None):
     return max(pages, key=score)
 
 
-def page_ws(port, match=None, kind="page", title_match=None):
+def page_ws(port, match=None, kind="page", title_match=None, target_id=None):
     tabs = requests.get(f"http://127.0.0.1:{port}/json/list", timeout=5).json()
-    target = pick_target(tabs, match, kind, title_match)
+    target = pick_target(tabs, match, kind, title_match, target_id)
     if not target:
         want = f" matching {match!r}" if match else ""
         if title_match:
@@ -208,10 +214,12 @@ def page_ws(port, match=None, kind="page", title_match=None):
 
 
 class CDP:
-    def __init__(self, port, match=None, kind="page", nested=False, title_match=None):
+    def __init__(self, port, match=None, kind="page", nested=False, title_match=None,
+                 target_id=None):
         # suppress_origin: Chrome rejects the default websocket Origin with 403
         self.ws = websocket.create_connection(
-            page_ws(port, match, kind, title_match), timeout=30, suppress_origin=True)
+            page_ws(port, match, kind, title_match, target_id), timeout=30,
+            suppress_origin=True)
         self.n = 0
         self.nested = nested
         disp = os.environ.get("DISPLAY") or ":0"
@@ -275,6 +283,9 @@ def main():
     ap.add_argument("--match-title", default=None,
                     help="pick the target whose window title contains this string "
                          "(distinguishes several windows of the same app)")
+    ap.add_argument("--target-id", default=None,
+                    help="pin one page target id; drivers resolve the window once "
+                         "and must not switch mid-run")
     ap.add_argument("--kind", default="page", choices=["page", "iframe", "any"],
                     help="target type to attach to; IDE webview panels live in 'iframe'")
     ap.add_argument("--nested", action="store_true",
@@ -294,7 +305,7 @@ def main():
     status, detail, shot_path = "ok", "", None
 
     try:
-        c = CDP(a.port, a.match, a.kind, a.nested, a.match_title)
+        c = CDP(a.port, a.match, a.kind, a.nested, a.match_title, a.target_id)
         if a.op == "text":
             print((c.eval("document.body.innerText") or "")[:6000])
         elif a.op == "eval":
