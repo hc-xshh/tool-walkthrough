@@ -1,0 +1,34 @@
+{
+  "version": 1,
+  "drivers": [
+    {
+      "file": "drive_codex.py",
+      "label": "Codex CLI",
+      "kind": "cli",
+      "command": "codex",
+      "allowed_args": []
+    },
+    {
+      "file": "drive_trae.py",
+      "label": "TRAE CN（GUI）",
+      "kind": "gui",
+      "port": 9339,
+      "allowed_args": []
+    },
+    {
+      "file": "drive_cursor.py",
+      "label": "Cursor（GUI）",
+      "kind": "gui",
+      "port": 9562,
+      "allowed_args": []
+    },
+    {
+      "file": "drive_qoder.py",
+      "label": "Qoder CN（GUI）",
+      "kind": "gui",
+      "port": 9444,
+      "allowed_args": ["--skip-workspace"],
+      "features": ["open_workspace", "skip_workspace"]
+    }
+  ]
+}

@@ -24,6 +24,8 @@ python3 workbench/server.py                 # 等价的直接启动（Windows �
 | 评测 | 选驱动器 + 任务 + 重复次数 | `code-eval/tools/run_tool.py ...` |
 | 运行 | 实时日志、截图、文件、停止 | — |
 
+驱动器清单（显示名、GUI 端口、CLI 命令、可透传参数）来自 `code-eval/drivers.json`，工作台不再维护第二份；页面上的端口提示和 Qoder 专属开关也由这份记录的 `kind` / `features` 决定。
+
 产物仍然落在 `runs/<run>/`，工作台不发明新的目录结构。跑完可以直接用命令行接手：
 
 ```bash

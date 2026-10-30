@@ -29,6 +29,8 @@ from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import urlparse
 
+import drivers
+
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
 ROOT = EVAL.parent
@@ -38,12 +40,7 @@ RUNS = ROOT / "runs"
 DEFAULT_OUT = RUNS / "dashboard"
 
 RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
-DRIVERS = {
-    "drive_codex.py": "Codex CLI",
-    "drive_trae.py": "TRAE CN（GUI）",
-    "drive_cursor.py": "Cursor（GUI）",
-    "drive_qoder.py": "Qoder CN（GUI）",
-}
+DRIVERS = drivers.labels()  # single source of truth: code-eval/drivers.json
 MAX_ACTIVE = 1
 LOCK = threading.Lock()
 ACTIVE = None

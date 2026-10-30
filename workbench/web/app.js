@@ -448,26 +448,30 @@ function viewEval() {
   const driverHint = document.getElementById("e-driver-hint");
   const firstUsable = Array.from(driverSelect.options).find((o) => !o.disabled);
   if (firstUsable) driverSelect.value = firstUsable.value;
-  const guiPorts = { "drive_qoder.py": 9444, "drive_cursor.py": 9562, "drive_trae.py": 9339 };
+  // 端口 / 类型 / 页面开关都来自 /api/state，这里不再抄一份工具清单。
+  const driverById = (id) => drivers.find((d) => d.id === id);
+  const hasFeature = (d, name) => Boolean(d && (d.features || []).includes(name));
   const syncHint = () => {
     const option = driverSelect.selectedOptions[0];
-    const port = guiPorts[driverSelect.value];
+    const driver = driverById(driverSelect.value);
     if (option && option.disabled) {
       driverHint.textContent = `不可用：${option.dataset.why || "环境不满足"}`;
     } else {
-      driverHint.textContent = port
-        ? `需要被测应用先带 --remote-debugging-port=${port} 启动；工作台在启动前会探测这个端口`
-        : "Codex 走 CLI，用自己的登录态，不需要调试端口";
+      driverHint.textContent = driver && driver.kind === "gui"
+        ? `需要被测应用先带 --remote-debugging-port=${driver.port} 启动；工作台在启动前会探测这个端口`
+        : "走 CLI，用自己的登录态，不需要调试端口";
     }
     const skipWrap = document.getElementById("e-skipws-wrap");
-    if (skipWrap) skipWrap.style.display = driverSelect.value === "drive_qoder.py" ? "" : "none";
     const skipBox = document.getElementById("e-skipws");
-    // Qoder 的工作区由工作台自动打开，默认就跳过驱动自建工作区。
-    if (skipBox && driverSelect.value === "drive_qoder.py") skipBox.checked = true;
+    const wantsSkip = hasFeature(driver, "skip_workspace");
+    if (skipWrap) skipWrap.style.display = wantsSkip ? "" : "none";
+    // 工作区由工作台在起跑前打开，所以默认勾上「跳过驱动自建工作区」。
+    if (skipBox && wantsSkip) skipBox.checked = true;
     const openWs = document.getElementById("e-openws");
     const openWsHint = document.getElementById("e-openws-hint");
-    if (openWs) openWs.style.display = driverSelect.value === "drive_qoder.py" ? "" : "none";
-    if (openWsHint) openWsHint.style.display = driverSelect.value === "drive_qoder.py" ? "" : "none";
+    const wantsOpen = hasFeature(driver, "open_workspace");
+    if (openWs) openWs.style.display = wantsOpen ? "" : "none";
+    if (openWsHint) openWsHint.style.display = wantsOpen ? "" : "none";
   };
   driverSelect.onchange = syncHint;
   syncHint();
@@ -517,7 +521,7 @@ function viewEval() {
           tasks: picked,
           reps: Number(document.getElementById("e-reps").value),
           force: document.getElementById("e-force").checked,
-          driver_args: (document.getElementById("e-driver").value === "drive_qoder.py"
+          driver_args: (hasFeature(driverById(document.getElementById("e-driver").value), "skip_workspace")
             && document.getElementById("e-skipws").checked) ? ["--skip-workspace"] : [],
           run_id: document.getElementById("e-runid").value.trim() || undefined,
         },

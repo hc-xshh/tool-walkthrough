@@ -41,6 +41,8 @@ RUNS = ROOT / "runs"
 EVAL = ROOT / "code-eval"
 PY = sys.executable
 
+sys.path.insert(0, str(EVAL / "tools"))
+import drivers as driver_registry  # noqa: E402
 sys.path.insert(0, str(HERE))
 import apps  # noqa: E402
 import config  # noqa: E402
@@ -53,27 +55,12 @@ RUN_ID_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,80}$")
 TOKEN = secrets.token_urlsafe(24)
 LAST_OPENED: dict[str, float] = {}  # run_id -> monotonic seconds
 
-DRIVERS = {
-    "drive_codex.py": "Codex CLI",
-    "drive_trae.py": "TRAE CN（GUI）",
-    "drive_cursor.py": "Cursor（GUI）",
-    "drive_qoder.py": "Qoder CN（GUI）",
-}
-
-# GUI drivers attach over CDP; if the port is closed the run would fail 10s later
-# with "timeout waiting for workspace-popover", which tells nobody anything.
-GUI_PORTS = {
-    "drive_qoder.py": 9444,
-    "drive_cursor.py": 9562,
-    "drive_trae.py": 9339,
-}
-
-# CLI drivers need a binary on PATH; GUI drivers need a debug port.
-CLI_DRIVERS = {"drive_codex.py": "codex"}
-
-# Flags a driver may receive from the page. Keep this a whitelist: the workbench
-# must never turn a form field into arbitrary argv.
-ALLOWED_DRIVER_ARGS = {"--skip-workspace"}
+# Everything about the tool list comes from code-eval/drivers.json. GUI drivers
+# attach over CDP (a closed port fails the run 10s later with a message that
+# tells nobody anything); CLI drivers need a binary on PATH.
+DRIVERS = driver_registry.labels()
+GUI_PORTS = driver_registry.gui_ports()
+CLI_DRIVERS = driver_registry.cli_commands()
 
 CONTENT_TYPES = {
     ".html": "text/html; charset=utf-8",
@@ -302,10 +289,9 @@ def dialog_summary(run_dir: Path | None) -> dict:
 
 def drivers_state() -> list[dict]:
     out = []
-    for driver_id, label in DRIVERS.items():
-        ok, why = driver_available(driver_id)
-        out.append({"id": driver_id, "label": label, "port": GUI_PORTS.get(driver_id),
-                    "available": ok, "why": why})
+    for item in driver_registry.state():
+        ok, why = driver_available(item["id"])
+        out.append({**item, "available": ok, "why": why})
     return out
 
 
@@ -451,7 +437,10 @@ def start_eval(body: dict) -> dict:
     if not isinstance(extra, list):
         raise ValueError("driver_args must be a list")
     extra = [str(arg) for arg in extra]
-    bad = [arg for arg in extra if arg not in ALLOWED_DRIVER_ARGS]
+    # Flags a driver may receive from the page: keep it a whitelist, so a form
+    # field can never become arbitrary argv.
+    allowed = set(driver_registry.allowed_args(driver))
+    bad = [arg for arg in extra if arg not in allowed]
     if bad:
         raise ValueError("driver argument not allowed: " + ", ".join(bad))
     if driver == "drive_qoder.py" and os.name != "nt" and "--skip-workspace" not in extra:
