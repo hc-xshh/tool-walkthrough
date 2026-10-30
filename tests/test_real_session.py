@@ -47,6 +47,7 @@ class RealSessionTest(unittest.TestCase):
     def test_wayland_session_requires_a_real_socket(self):
         with tempfile.TemporaryDirectory() as tmp:
             env = {
+                "DISPLAY": ":0",
                 "XDG_SESSION_TYPE": "wayland",
                 "XDG_SESSION_ID": "3",
                 "XDG_RUNTIME_DIR": tmp,
@@ -65,6 +66,7 @@ class RealSessionTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             pathlib.Path(tmp, "wayland-0").touch()
             env = {
+                "DISPLAY": ":0",
                 "XDG_SESSION_TYPE": "wayland",
                 "XDG_SESSION_ID": "3",
                 "XDG_RUNTIME_DIR": tmp,
@@ -88,7 +90,8 @@ class RealSessionTest(unittest.TestCase):
                 return _proc("screen connected primary 1920x1080+0+0\n")
             return _proc("Type=x11\nActive=yes\nSeat=seat0\n")
 
-        with mock.patch.dict(__import__("os").environ, {"XDG_SESSION_ID": "3"}, clear=False), \
+        with mock.patch.dict(__import__("os").environ,
+                             {"DISPLAY": ":0", "XDG_SESSION_ID": "3"}, clear=False), \
              mock.patch.object(wtlib, "which_any", side_effect=lambda names: "/usr/bin/" + names[0]), \
              mock.patch.object(wtlib.subprocess, "run", side_effect=fake_run):
             with self.assertRaises(SystemExit) as cm:
