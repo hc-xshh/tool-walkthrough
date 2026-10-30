@@ -25,8 +25,8 @@ def active_session():
     loginctl = which_any(["loginctl"])
     if not loginctl:
         raise SystemExit(
-            "real-desktop check failed: loginctl is missing; "
-            "run inside an active Linux desktop session"
+            "virtual displays are disabled: loginctl is missing, so no seated "
+            "desktop session can be proven; run inside the real desktop session"
         )
     sessions = []
     sid = os.environ.get("XDG_SESSION_ID")
@@ -55,7 +55,7 @@ def active_session():
         if props.get("Active") == "yes" and props.get("Seat") not in (None, "", "-"):
             return candidate, props
     raise SystemExit(
-        "real-desktop check failed: no active logind session with a seat; "
+        "virtual displays are disabled: no active logind session with a seat; "
         "use the real desktop, not a headless/container display"
     )
 
@@ -86,6 +86,11 @@ def verify_real_session(disp=":0", refresh=False):
     value = str(disp or ":0").strip()
     sid, props = active_session()
     expected = (props.get("Display") or "").strip()
+    if not expected:
+        # Wayland sessions usually report no Display in logind; the only
+        # legitimate X display there is the default (XWayland :0), or the one
+        # this process was started with. Anything else is a stray Xvfb/Xephyr.
+        expected = (os.environ.get("DISPLAY") or ":0").strip() or ":0"
     if expected and value.split(".")[0] != expected.split(".")[0]:
         raise SystemExit(
             f"virtual displays are disabled: DISPLAY={value} is not the active "

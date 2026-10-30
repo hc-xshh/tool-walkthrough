@@ -167,13 +167,13 @@ def open_folder(app_id: str, path: Path, wait: float = 10.0) -> dict:
     app = APPS.get(app_id)
     if not app:
         raise KeyError(app_id)
-    if not app.get("open") or not Path(app["open"][0]).exists():
-        raise ValueError(f"{app['label']} 没有配置命令行打开方式")
     if not path.is_dir():
         raise ValueError(f"目录不存在：{path}")
     current = status(app_id)
     if not current["port_open"]:
         raise ValueError(f"{app['label']} 还没带调试端口启动；先点「启动 / 重启」")
+    if not app.get("open") or not Path(app["open"][0]).exists():
+        raise ValueError(f"{app['label']} 没有配置命令行打开方式")
     subprocess.Popen([*app["open"], str(path)], cwd=str(Path.home()),
                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                      start_new_session=True)
