@@ -44,6 +44,19 @@ BLOCKED: list[tuple[str, str]] = [
 ]
 
 
+# Qoder's "run this command" confirmation. The button is not a plain "接受":
+# 1.37 renders it as "终端运行 Ctrl ↩", with the shortcut glued to the label,
+# while older builds used "接受". Matching an exact label misses 1.37, and
+# matching a bare "运行" would hit the editor's "运行 Python 文件" toolbar
+# button, so the rule is a prefix. Shared by drive_qoder.py and stall.py.
+RUN_CONFIRM_PREFIXES: tuple[str, ...] = ("终端运行", "运行命令", "执行命令")
+
+
+def run_confirm(label: str) -> bool:
+    """True when `label` is Qoder's "run this command" button."""
+    return (label or "").strip().startswith(RUN_CONFIRM_PREFIXES)
+
+
 def classify(text: str) -> list[dict]:
     """Rules that match `text`, blocked first (a blocked marker wins)."""
     hits: list[dict] = []

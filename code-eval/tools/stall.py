@@ -165,9 +165,17 @@ def classify(text: str, visible: list[dict], words: list[dict] | None) -> dict:
                 return {"verdict": "handled", "label": label,
                         "reason": hit["marker"], "via": "ocr"}
 
-    # Qoder's command confirmation: "终端运行 / 拒绝 / 接受". It is not in the
-    # shared dialog rules because the wording is product-specific.
-    if any(marker in haystack for marker in ("终端运行", "运行命令", "执行命令")):
+    # Qoder's command confirmation: "终端运行 Ctrl ↩" in 1.37, "接受" in older
+    # builds. Match the run button by prefix and hand back its centre, so the
+    # caller clicks the button itself instead of a label that carries a
+    # shortcut suffix and has no exact match.
+    if any(marker in haystack for marker in dialogs.RUN_CONFIRM_PREFIXES):
+        for item in visible:
+            label = item.get("text") or item.get("aria") or ""
+            if dialogs.run_confirm(label):
+                return {"verdict": "handled", "label": label, "reason": "终端运行",
+                        "via": "dom",
+                        "click": {"x": item["x"], "y": item["y"]}}
         for label in ("接受", "允许运行", "允许"):
             if label in dom:
                 return {"verdict": "handled", "label": label, "reason": "终端运行", "via": "dom"}

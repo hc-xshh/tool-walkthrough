@@ -30,6 +30,18 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(dialogs.classify("正在执行中 由 AI 生成"), [])
 
 
+class RunConfirmTest(unittest.TestCase):
+    def test_137_run_button_matches_by_prefix(self):
+        # The shortcut is glued to the label; exact matching never fires.
+        self.assertTrue(dialogs.run_confirm("终端运行 Ctrl ↩"))
+
+    def test_plain_accept_is_left_to_the_exact_label_rules(self):
+        self.assertFalse(dialogs.run_confirm("接受"))
+
+    def test_cancel_is_not_a_run_confirmation(self):
+        self.assertFalse(dialogs.run_confirm("取消"))
+
+
 class HandleTest(unittest.TestCase):
     def setUp(self):
         self.logged = []

@@ -3,7 +3,8 @@
 与 drive_trae.py 的区别：
 - Qoder 的每个任务在自己的工作区里跑（工作区 = 任务目录），避免跨任务串味；
 - 工作区用「新建工作区」对话框 + 原生文件夹选择器创建，原生对话框由 harness/pick-folder.ps1 处理；
-- 完成判据 = 见过「正在执行中」后它消失、且出现「由 AI 生成」，再稳定 3 次轮询。
+- 完成判据 = 见过「停止」按钮（这一轮在工作）后它变回「Send message」、且出现
+  「由 AI 生成」，再稳定 3 次轮询。旧版的「正在执行中」文案仍然兼容。
 
 用法：
   python code-eval/tools/drive_qoder.py --task L1-split-bill \
@@ -33,6 +34,9 @@ APPROVE_LABELS = ("本次会话允许", "允许", "运行", "同意", "接受")
 # accept. Only treat it as an approval when the page asks to run a command.
 APPROVE_CONTEXT = ("终端运行", "运行命令", "执行命令", "自动执行")
 APPROVE_GATED = tuple(label for label in APPROVE_LABELS if label != "接受")
+# "确定开启终端自动执行？": never confirmed — auto-run is a global setting and
+# it would hide the approvals this harness counts.
+AUTO_EXEC_MARKER = "确定开启终端自动执行"
 # Qoder 1.37 renamed the entry point; keep both so older builds still work.
 NEW_TASK_LABELS = ("新的任务", "新会话", "新建任务")
 TRUST_LABELS = ("是，我信任此作者", "信任此作者")
@@ -91,6 +95,66 @@ def click_text_exact(label):
       el.click();
       return 'clicked';
     }})()""")
+
+
+def click_run_confirm():
+    """Click Qoder's terminal-run button; return its label, or None.
+
+    1.37 labels it "终端运行 Ctrl ↩" as a split button. Two things matter:
+
+    * match by prefix — an exact label never fires once the shortcut is part
+      of the text;
+    * click the element itself, in the same JS call that finds it. Measuring
+      the rect first and clicking it from a second process loses the race with
+      the chat re-rendering: the footer buttons shift and the click lands on
+      the neighbouring "开启终端自动执行" switch.
+    """
+    prefixes = json.dumps(list(dialogs.RUN_CONFIRM_PREFIXES), ensure_ascii=False)
+    label = CDP.js(f"""(() => {{
+      const prefixes = {prefixes};
+      // A modal is on top: the card underneath is still in the DOM, and a
+      // synthetic click would reach it through the backdrop.
+      const modal = Array.from(document.querySelectorAll('[aria-modal="true"], .monaco-dialog-box'))
+        .some(e => e.offsetParent !== null);
+      if (modal) return null;
+      for (const el of document.querySelectorAll('button,[role="button"]')) {{
+        if (!el.offsetParent || el.disabled) continue;
+        const text = (el.innerText || '').trim();
+        if (!prefixes.some(p => text.startsWith(p))) continue;
+        el.click();
+        return text;
+      }}
+      return null;
+    }})()""")
+    return label if isinstance(label, str) and label else None
+
+
+def dismiss_auto_exec(log_path, where):
+    """Cancel Qoder's "开启终端自动执行？" confirmation.
+
+    Enabling auto-run is a global policy change (and would hide the approvals
+    this harness measures), so the answer is always "取消". Only the dialog's
+    own button is clicked: the chat card underneath has a "取消" too.
+    """
+    marker = AUTO_EXEC_MARKER
+    if marker not in page_text():
+        return False
+    rect = CDP.js("""(() => {
+      const dlg = document.querySelector('[aria-modal="true"], .monaco-dialog-box');
+      if (!dlg) return null;
+      const b = Array.from(dlg.querySelectorAll('button'))
+        .find(e => (e.innerText || '').trim() === '取消');
+      if (!b) return null;
+      const r = b.getBoundingClientRect();
+      return {x: Math.round(r.x + r.width / 2), y: Math.round(r.y + r.height / 2)};
+    })()""")
+    if not isinstance(rect, dict):
+        log(log_path, "auto_exec_cancel_missing", where=where)
+        return False
+    CDP.run("clickxy", f"{rect['x']},{rect['y']}")
+    ok = wait_for(lambda: marker not in page_text(), 8, label="auto-exec-dialog")
+    log(log_path, "auto_exec_cancelled", where=where, ok=ok)
+    return ok
 
 
 def pick_folder(path):
@@ -169,6 +233,8 @@ def dialog_shot(log_path):
 
 def guard_dialogs(log_path, where):
     """Safe dialogs are handled; blocked/unknown ones stop the run with evidence."""
+    if dismiss_auto_exec(log_path, where):
+        return "handled"
     status, detail = dialogs.handle(
         page_text, click_text_exact,
         lambda event, **fields: log(log_path, event, **fields),
@@ -335,6 +401,20 @@ def approve_native(label):
     return True
 
 
+def turn_active():
+    """True while Qoder is working on a turn.
+
+    1.37 never prints "正在执行中": the composer's send button becomes "停止"
+    for the whole turn, including while a run prompt waits for a click. Without
+    this the finished run never looked finished and every attempt waited out
+    the whole timebox.
+    """
+    return bool(CDP.js("""(() => {
+      const stop = document.querySelector('[aria-label="停止"], [aria-label="Stop"]');
+      return !!(stop && stop.offsetParent !== null);
+    })()"""))
+
+
 def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
     deadline = time.time() + timebox
     started = time.time()
@@ -342,24 +422,36 @@ def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
     next_stall = 0.0
     stall_reports = 0
     warned_unmatched = False
-    seen_running = False
+    seen_active = False
     stable = 0
     last = ""
     last_change = time.time()
     approvals = 0
+    run_clicks = 0
     while time.time() < deadline:
         now = time.time()
         current = page_text()
         if current != last:
             last, last_change = current, now
-        running = "正在执行中" in current
+            run_clicks = 0
+        streaming = "正在执行中" in current  # older Qoder builds
+        running = streaming or turn_active()
         if running:
-            seen_running = True
+            seen_active = True
         label = CDP.pending_label(approval_labels(current))
+        run_label = None if label else click_run_confirm()
         if label:
             approve_native(label)
             approvals += 1
             log(log_path, "approve", label=label)
+            time.sleep(2)
+            continue
+        if run_label and run_clicks < 3:
+            # Cap the retries: a click that does not close the card must not
+            # keep the loop from noticing the run is already finished.
+            run_clicks += 1
+            approvals += 1
+            log(log_path, "approve", label=run_label, reason="终端运行")
             time.sleep(2)
             continue
         if "拒绝" in current and "接受" in current and not warned_unmatched:
@@ -369,7 +461,7 @@ def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
             print("[qoder] 界面上有未识别的确认框（拒绝/接受），可能在等人点", flush=True)
             log(log_path, "approval_unrecognised")
 
-        if stall_timeout and not running and now - last_change >= stall_timeout and now >= next_stall:
+        if stall_timeout and not streaming and now - last_change >= stall_timeout and now >= next_stall:
             # Nothing moved for a while. Look at the screen instead of waiting
             # for the timebox: a known prompt is clicked, a blocked one stops
             # the run with evidence, an unrecognised frozen screen stops too.
@@ -400,17 +492,17 @@ def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
                     f"（{report['verdict']}），已留证：{report['evidence']}")
             if report["frozen"] and stall_reports >= 2:
                 raise SystemExit(f"界面冻结、没有可点的已知按钮，已留证：{report['evidence']}")
-        if seen_running and not running and "由 AI 生成" in current:
+        if seen_active and not running and "由 AI 生成" in current:
             stable += 1
             if stable >= 3:
                 log(log_path, "done", approvals=approvals, idle=round(time.time() - last_change, 1))
                 return True, approvals
         else:
             stable = 0
-        if seen_running and time.time() - last_change > idle_s and not running:
+        if seen_active and not running and time.time() - last_change > idle_s:
             log(log_path, "done_idle", approvals=approvals)
             return True, approvals
-        if not running and "正在执行中" not in current:
+        if not streaming:
             # A dialog that appears mid-run is handled here; blocked/unknown
             # ones raise and end the attempt with a screenshot.
             guard_dialogs(log_path, "idle")

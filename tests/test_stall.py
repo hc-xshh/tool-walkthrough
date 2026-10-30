@@ -61,6 +61,17 @@ class ClassifyTest(unittest.TestCase):
         self.assertEqual(report["verdict"], "handled")
         self.assertEqual(report["via"], "ocr")
 
+    def test_run_button_with_shortcut_is_clicked_at_its_centre(self):
+        visible = [button("取消", 50, 60), button("终端运行 Ctrl ↩", 300, 40)]
+        report = stall.classify("终端运行 Ctrl ↩\n取消", visible, None)
+        self.assertEqual(report["verdict"], "handled")
+        self.assertEqual(report["label"], "终端运行 Ctrl ↩")
+        self.assertEqual(report["click"], {"x": 300, "y": 40})
+
+    def test_cancel_is_never_clicked_on_the_run_prompt(self):
+        report = stall.classify("终端运行 Ctrl ↩\n取消", [button("取消", 50, 60)], None)
+        self.assertEqual(report["verdict"], "unknown")
+
     def test_trust_prompt_reuses_the_dialog_rules(self):
         report = stall.classify("是否信任此作者", [button("是，我信任此作者")], None)
         self.assertEqual(report["verdict"], "handled")
@@ -124,6 +135,13 @@ class DiagnoseTest(unittest.TestCase):
             self.assertIn("verdict: handled", text)
             self.assertIn("接受 @ 10,20", text)
             self.assertTrue(Path(report["shot"]).is_file())
+
+    def test_run_prompt_keeps_the_button_centre_for_the_caller(self):
+        cdp = FakeCdp(visible=[button("终端运行 Ctrl ↩", 300, 40)], text="终端运行 Ctrl ↩")
+        with tempfile.TemporaryDirectory() as tmp:
+            report = stall.diagnose(cdp, Path(tmp), "stall1", "终端运行 Ctrl ↩")
+            self.assertEqual(report["verdict"], "handled")
+            self.assertEqual(report["click"], {"x": 300, "y": 40})
 
     def test_dead_when_cdp_gives_nothing(self):
         cdp = FakeCdp(visible=[], text="", shot=False)
