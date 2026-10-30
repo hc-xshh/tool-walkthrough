@@ -17,10 +17,11 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
-REPO = EVAL.parent
-CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--match", "workbench"]
+sys.path.insert(0, str(HERE))
+from driver_core import CDP_SCRIPT, Cdp, build_feedback, log  # noqa: E402
+
+CDP = Cdp([sys.executable, str(CDP_SCRIPT), "--match", "workbench"], "_drive_tmp.js")
 EDITOR = ".chat-input-v2-input-box-editable"
-TMP_JS = HERE / "_drive_tmp.js"
 APPROVE_LABELS = (
     "本次会话允许",
     "本次会话",
@@ -32,45 +33,8 @@ APPROVE_LABELS = (
 )
 
 
-def cdp(op, arg=None, timeout=90, check=False):
-    cmd = CDP + [op] + ([arg] if arg else [])
-    p = subprocess.run(
-        cmd, capture_output=True, text=True, encoding="utf-8",
-        errors="replace", timeout=timeout,
-    )
-    if check and p.returncode != 0:
-        raise RuntimeError(f"cdp {op} failed: {(p.stdout + p.stderr)[-600:]}")
-    return p
-
-
-def js_eval(source, timeout=60):
-    TMP_JS.write_text(source, encoding="utf-8")
-    try:
-        p = cdp("eval", "@" + str(TMP_JS), timeout=timeout)
-    finally:
-        TMP_JS.unlink(missing_ok=True)
-    if p.returncode != 0:
-        return None
-    raw = p.stdout.strip()
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return raw
-
-
-def page_text():
-    p = cdp("text")
-    return p.stdout if p.returncode == 0 else ""
-
-
-def log(path, event, **fields):
-    rec = {"ts": time.strftime("%H:%M:%S"), "event": event, **fields}
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-
 def editor_info():
-    return js_eval(
+    return CDP.js(
         f"""(() => {{
           const el = document.querySelector('{EDITOR}');
           if (!el) return null;
@@ -81,7 +45,7 @@ def editor_info():
 
 def editor_rect():
     """编辑区中心点；被浮层盖住时返回 '__covered__'，不在视口内先滚进来。"""
-    return js_eval(
+    return CDP.js(
         f"""(() => {{
           const el = document.querySelector('{EDITOR}');
           if (!el) return null;
@@ -106,11 +70,11 @@ def click_editor(log_path, tries=12):
             if approve(log_path):
                 time.sleep(1.5)
                 continue
-            cdp("key", "Escape")
+            CDP.run("key", "Escape")
             time.sleep(0.8)
             continue
         if isinstance(pos, dict):
-            cdp("clickxy", f"{pos['x']},{pos['y']}")
+            CDP.run("clickxy", f"{pos['x']},{pos['y']}")
             time.sleep(0.4)
             return True
         time.sleep(0.8)
@@ -118,34 +82,17 @@ def click_editor(log_path, tries=12):
 
 
 def clear_editor():
-    cdp("keycombo", "ctrl+a")
-    cdp("key", "Backspace")
+    CDP.run("keycombo", "ctrl+a")
+    CDP.run("key", "Backspace")
     time.sleep(0.3)
 
 
-def click_label(label, nth=None):
-    cmd = ["clickel", label] + (["--nth", str(nth)] if nth is not None else [])
-    return cdp(*cmd, timeout=60).returncode == 0
-
-
-def pending_approval():
-    """当前页面是否有一个可点的授权按钮，返回它的文案。"""
-    labels = json.dumps(list(APPROVE_LABELS), ensure_ascii=False)
-    return js_eval(
-        f"""(() => {{
-          const labels = {labels};
-          const els = Array.from(document.querySelectorAll('button,[role="button"],div,span'))
-            .filter(e => e.offsetParent !== null);
-          for (const label of labels) {{
-            if (els.some(e => (e.innerText || '').trim() === label)) return label;
-          }}
-          return null;
-        }})()"""
-    )
+def click_label(label):
+    return CDP.run("clickel", label, timeout=60).returncode == 0
 
 
 def approve(log_path):
-    label = pending_approval()
+    label = CDP.pending_label(APPROVE_LABELS)
     if not label:
         return False
     if click_label(label):
@@ -165,7 +112,7 @@ def wait_done(log_path, timebox, debug=False, idle_s=45):
     last = ""
     last_change = time.time()
     while time.time() < deadline:
-        current = page_text()
+        current = CDP.text()
         if current != last:
             tail = current.strip()[-260:].replace("\n", " | ")
             log(log_path, "state", tail=tail)
@@ -182,16 +129,6 @@ def wait_done(log_path, timebox, debug=False, idle_s=45):
         time.sleep(2)
     log(log_path, "timeout", approvals=approvals)
     return False, approvals, last_change
-
-
-def build_feedback(result):
-    """把上一轮的隐藏验收失败摘要变成下一轮的 prompt（不给测试源码）。"""
-    lines = ["上一轮没有通过验收，请继续在这个仓库里修（不要改 tests/）："]
-    for failure in (result.get("accept") or {}).get("failures", [])[:8]:
-        tail = [ln for ln in (failure.get("message") or "").splitlines() if ln.strip()]
-        lines.append(f"- {failure.get('test')}: {tail[-1][:160] if tail else ''}")
-    lines.append("改完自己跑一遍 python -m unittest discover -s tests -v，再说明改了什么。")
-    return "\n".join(lines)
 
 
 def main():
@@ -280,7 +217,10 @@ def main():
             if result is None or result.get("verdict") == "pass" or index > a.max_rounds:
                 index -= 1
                 break
-            prompt = build_feedback(result)
+            prompt = build_feedback(
+                result,
+                "改完自己跑一遍 python -m unittest discover -s tests -v，再说明改了什么。",
+            )
             log(log_path, "feedback", round=index)
         if index > 1:
             log(log_path, "round", round=index)
@@ -292,7 +232,7 @@ def main():
         if not state or state["len"] > 1:  # 空编辑区是一个换行
             raise SystemExit(f"editor not empty before typing (round {index}): {state}")
 
-        cdp("type", prompt, check=True)
+        CDP.run("type", prompt, check=True)
         time.sleep(0.6)
         state = editor_info()
         if not state or state["len"] < 80:
@@ -300,14 +240,14 @@ def main():
             if not click_editor(log_path):
                 raise SystemExit("editor lost before retry")
             clear_editor()
-            cdp("type", prompt, check=True)
+            CDP.run("type", prompt, check=True)
             time.sleep(0.6)
             state = editor_info()
         if not state or state["len"] < 80:
             raise SystemExit(f"prompt not inserted (round {index}): {state}")
         log(log_path, "typed", round=index, chars=state["len"])
 
-        cdp("key", "Enter", check=True)
+        CDP.run("key", "Enter", check=True)
         if index == 1:
             started = time.time()
         time.sleep(1.5)
@@ -338,7 +278,7 @@ def main():
     took = round(time.time() - started, 1)
     measured = round(last_change - started, 1) if last_change else took
     try:
-        cdp("shot", str(Path(a.out).with_suffix(".png")))
+        CDP.run("shot", str(Path(a.out).with_suffix(".png")))
     except Exception:
         pass
 

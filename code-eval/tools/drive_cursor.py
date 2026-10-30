@@ -23,59 +23,25 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
-REPO = EVAL.parent
-CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--port", "9562"]
+sys.path.insert(0, str(HERE))
+from driver_core import CDP_SCRIPT, Cdp, log  # noqa: E402
+
+CDP = Cdp([sys.executable, str(CDP_SCRIPT), "--port", "9562"], "_cursor_tmp.js")
 EDITOR = '[contenteditable="true"]'
 CURSOR_CLI = os.environ.get("CURSOR_CLI", r"D:\cursor\resources\app\bin\cursor.cmd")
 APPROVE = ("Allow", "Allow once", "Allow for this session", "Run", "Accept", "Approve",
            "允许", "允许一次", "运行", "同意")
-TMP_JS = HERE / "_cursor_tmp.js"
-
-
-def cdp(op, arg=None, timeout=90, check=False):
-    cmd = CDP + [op] + ([arg] if arg else [])
-    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=timeout)
-    if check and p.returncode != 0:
-        raise RuntimeError(f"cdp {op} failed: {(p.stdout + p.stderr)[-600:]}")
-    return p
-
-
-def js(source, timeout=60):
-    TMP_JS.write_text(source, encoding="utf-8")
-    try:
-        p = cdp("eval", "@" + str(TMP_JS), timeout=timeout)
-    finally:
-        TMP_JS.unlink(missing_ok=True)
-    if p.returncode != 0:
-        return None
-    raw = p.stdout.strip()
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return raw
-
-
-def page_text():
-    p = cdp("text")
-    return p.stdout if p.returncode == 0 else ""
-
-
-def log(path, event, **fields):
-    rec = {"ts": time.strftime("%H:%M:%S"), "event": event, **fields}
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
 
 
 def buttons():
-    return js("""(() => Array.from(document.querySelectorAll('button'))
+    return CDP.js("""(() => Array.from(document.querySelectorAll('button'))
       .filter(e => e.offsetParent !== null)
       .map(e => (e.innerText || e.getAttribute('aria-label') || '').trim())
       .filter(Boolean))()""") or []
 
 
 def click_button(label):
-    return js(f"""(() => {{
+    return CDP.js(f"""(() => {{
       const want = {json.dumps(label, ensure_ascii=False)};
       const el = Array.from(document.querySelectorAll('button'))
         .filter(e => e.offsetParent !== null &&
@@ -87,7 +53,7 @@ def click_button(label):
 
 
 def editor_rect():
-    return js(f"""(() => {{
+    return CDP.js(f"""(() => {{
       const el = document.querySelector('{EDITOR}');
       if (!el) return null;
       el.scrollIntoView({{block:'center'}});
@@ -98,7 +64,7 @@ def editor_rect():
 
 
 def open_workspace(path, log_path):
-    if path.name in page_text() and isinstance(editor_rect(), dict) and "Send message" in " ".join(buttons()):
+    if path.name in CDP.text() and isinstance(editor_rect(), dict) and "Send message" in " ".join(buttons()):
         log(log_path, "workspace_already", name=path.name)
         return True
     p = subprocess.run([CURSOR_CLI, str(path)], capture_output=True, text=True,
@@ -106,7 +72,7 @@ def open_workspace(path, log_path):
     log(log_path, "open_workspace", rc=p.returncode, out=(p.stdout + p.stderr)[-200:])
     deadline = time.time() + 60
     while time.time() < deadline:
-        if path.name in page_text() and isinstance(editor_rect(), dict) \
+        if path.name in CDP.text() and isinstance(editor_rect(), dict) \
                 and "Send message" in " ".join(buttons()):
             time.sleep(2)
             return True
@@ -115,7 +81,7 @@ def open_workspace(path, log_path):
 
 
 def editor_len():
-    n = js(f"""(() => {{
+    n = CDP.js(f"""(() => {{
       const el = document.querySelector('{EDITOR}');
       return el ? (el.innerText || '').length : -1;
     }})()""")
@@ -135,24 +101,24 @@ def send_prompt(prompt, log_path):
             log(log_path, "editor_missing", attempt=attempt)
             time.sleep(2)
             continue
-        cdp("clickxy", f"{r['x']},{r['y']}")
+        CDP.run("clickxy", f"{r['x']},{r['y']}")
         time.sleep(0.4)
-        cdp("keycombo", "ctrl+a")
-        cdp("key", "Backspace")
+        CDP.run("keycombo", "ctrl+a")
+        CDP.run("key", "Backspace")
         time.sleep(0.3)
-        cdp("type", prompt, timeout=60)
+        CDP.run("type", prompt, timeout=60)
         time.sleep(0.8)
         got = editor_len()
         if got < len(prompt) * 0.6:
             log(log_path, "insert_short", attempt=attempt, got=got, want=len(prompt))
             time.sleep(0.5)
             continue
-        cdp("key", "Enter")
+        CDP.run("key", "Enter")
         log(log_path, "sent", attempt=attempt, chars=got)
         time.sleep(3)
         # If the text is still in the composer and nothing is running, send again.
         if editor_len() > 20 and not any("Stop" in x for x in buttons()):
-            cdp("key", "Enter")
+            CDP.run("key", "Enter")
             log(log_path, "resent")
         return True
     return False
@@ -173,7 +139,7 @@ def wait_done(log_path, timebox, idle_s=30):
     stable = 0
     seen_stop = False
     while time.time() < deadline:
-        text = page_text()
+        text = CDP.text()
         labels = buttons()
         if text != last:
             last, last_change = text, time.time()

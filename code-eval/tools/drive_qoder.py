@@ -2,7 +2,7 @@
 
 与 drive_trae.py 的区别：
 - Qoder 的每个任务在自己的工作区里跑（工作区 = 任务目录），避免跨任务串味；
-- 工作区用「新建工作区」对话框 + 原生文件夹选择器创建，原生对话框由 qoder_folder.ps1 处理；
+- 工作区用「新建工作区」对话框 + 原生文件夹选择器创建，原生对话框由 harness/pick-folder.ps1 处理；
 - 完成判据 = 见过「正在执行中」后它消失、且出现「由 AI 生成」，再稳定 3 次轮询。
 
 用法：
@@ -23,44 +23,19 @@ HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
 sys.path.insert(0, str(HERE))
 import dialogs  # noqa: E402  (same directory; rules live there)
-REPO = EVAL.parent
-CDP = [sys.executable, str(REPO / "harness" / "cdp.py"), "--port", "9444"]
-MATCH_TITLE = None  # set from the task folder so several windows are not ambiguous
+from driver_core import CDP_SCRIPT, Cdp, log, wait_for  # noqa: E402
+
+CDP = Cdp([sys.executable, str(CDP_SCRIPT), "--port", "9444"], "_qoder_tmp.js")
 EDITOR = '[contenteditable="true"]'
 APPROVE_LABELS = ("本次会话允许", "允许", "运行", "同意")
 # Qoder 1.37 renamed the entry point; keep both so older builds still work.
 NEW_TASK_LABELS = ("新的任务", "新会话", "新建任务")
 TRUST_LABELS = ("是，我信任此作者", "信任此作者")
-PS1 = REPO / "harness" / "pick-folder.ps1"
-
-
-def cdp(op, arg=None, timeout=90, check=False):
-    cmd = CDP + ([ "--match-title", MATCH_TITLE ] if MATCH_TITLE else []) + [op] + ([arg] if arg else [])
-    p = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
-                       errors="replace", timeout=timeout)
-    if check and p.returncode != 0:
-        raise RuntimeError(f"cdp {op} failed: {(p.stdout + p.stderr)[-600:]}")
-    return p
-
-
-def js(source, timeout=60):
-    tmp = HERE / "_qoder_tmp.js"
-    tmp.write_text(source, encoding="utf-8")
-    try:
-        p = cdp("eval", "@" + str(tmp), timeout=timeout)
-    finally:
-        tmp.unlink(missing_ok=True)
-    if p.returncode != 0:
-        return None
-    raw = p.stdout.strip()
-    try:
-        return json.loads(raw)
-    except ValueError:
-        return raw
+PS1 = CDP_SCRIPT.parent / "pick-folder.ps1"
 
 
 def page_text():
-    p = cdp("text")
+    p = CDP.run("text")
     if p.returncode != 0:
         # CDP is down or websocket-client is missing; say so once instead of
         # letting every wait_for() report "element not found".
@@ -71,14 +46,8 @@ def page_text():
     return p.stdout
 
 
-def log(path, event, **fields):
-    rec = {"ts": time.strftime("%H:%M:%S"), "event": event, **fields}
-    with path.open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(rec, ensure_ascii=False) + "\n")
-
-
 def click_aria(label):
-    return js(f"""(() => {{
+    return CDP.js(f"""(() => {{
       const el = document.querySelector('[aria-label="{label}"]');
       if (!el) return 'not found';
       el.scrollIntoView({{block:'center'}});
@@ -88,7 +57,7 @@ def click_aria(label):
 
 
 def click_text_exact(label):
-    return js(f"""(() => {{
+    return CDP.js(f"""(() => {{
       const els = Array.from(document.querySelectorAll('button,div,span,a,li'))
         .filter(e => e.offsetParent !== null && (e.innerText || '').trim() === {json.dumps(label)});
       const el = els[els.length - 1];
@@ -97,16 +66,6 @@ def click_text_exact(label):
       el.click();
       return 'clicked';
     }})()""")
-
-
-def wait_for(predicate, timeout, interval=1.0, label=""):
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if predicate():
-            return True
-        time.sleep(interval)
-    print(f"timeout waiting for {label}", file=sys.stderr)
-    return False
 
 
 def pick_folder(path):
@@ -130,7 +89,7 @@ def ensure_workspace(path, log_path, timeout=120):
     # The workspace chip is only clickable on the home screen, not inside a task.
     click_text_exact("新的任务")
     time.sleep(1.5)
-    chip = js("""(() => {
+    chip = CDP.js("""(() => {
       const els = Array.from(document.querySelectorAll('div[class*="new-chat-workspace"] button'));
       const el = els[els.length - 1];
       if (!el) return null;
@@ -139,7 +98,7 @@ def ensure_workspace(path, log_path, timeout=120):
               label: (el.innerText || '').trim()};
     })()""")
     if isinstance(chip, dict):
-        cdp("clickxy", f"{chip['x']},{chip['y']}")
+        CDP.run("clickxy", f"{chip['x']},{chip['y']}")
         log(log_path, "chip_click", label=chip.get("label"), xy=f"{chip['x']},{chip['y']}")
     if not wait_for(lambda: "新建工作区" in page_text(), 10, label="workspace-popover"):
         log(log_path, "popover_missing", text=page_text()[:300])
@@ -164,7 +123,7 @@ def ensure_workspace(path, log_path, timeout=120):
 
 def page_dialogs():
     """Visible modal texts, used only when no rule matched."""
-    out = js("""(() => {
+    out = CDP.js("""(() => {
       const sel = '[aria-modal="true"], .monaco-dialog-box';
       return Array.from(document.querySelectorAll(sel))
         .filter(e => e.offsetParent !== null)
@@ -177,7 +136,7 @@ def page_dialogs():
 def dialog_shot(log_path):
     path = Path(log_path).with_suffix(".dialog.png")
     try:
-        cdp("shot", str(path), timeout=30)
+        CDP.run("shot", str(path), timeout=30)
         return str(path)
     except Exception:  # noqa: BLE001 - evidence is best effort
         return None
@@ -213,7 +172,7 @@ def dismiss_trust(log_path):
 
 
 def editor_info():
-    return js(f"""(() => {{
+    return CDP.js(f"""(() => {{
       const el = document.querySelector('{EDITOR}');
       if (!el) return null;
       return {{len: (el.innerText || '').length}};
@@ -235,18 +194,18 @@ def send_prompt(prompt, log_path):
     info = editor_info()
     if not isinstance(info, dict):
         return False
-    rect = js(f"""(() => {{
+    rect = CDP.js(f"""(() => {{
       const el = document.querySelector('{EDITOR}');
       const r = el.getBoundingClientRect();
       return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}};
     }})()""")
     if isinstance(rect, dict):
-        cdp("clickxy", f"{rect['x']},{rect['y']}")
+        CDP.run("clickxy", f"{rect['x']},{rect['y']}")
         time.sleep(0.3)
-    cdp("keycombo", "ctrl+a")
-    cdp("key", "Backspace")
+    CDP.run("keycombo", "ctrl+a")
+    CDP.run("key", "Backspace")
     time.sleep(0.2)
-    cdp("type", prompt, timeout=60)
+    CDP.run("type", prompt, timeout=60)
     time.sleep(0.5)
     inserted = editor_info()
     got = inserted.get("len", 0) if isinstance(inserted, dict) else 0
@@ -255,22 +214,22 @@ def send_prompt(prompt, log_path):
         return False
     # A slash/at mention popup can swallow Enter; close it before sending.
     if "指令或扩展能力" in page_text():
-        cdp("key", "Escape")
+        CDP.run("key", "Escape")
         time.sleep(0.4)
-    cdp("key", "Enter")
+    CDP.run("key", "Enter")
     log(log_path, "sent", chars=got)
     # Retry once if the composer still holds the text and nothing is running.
     time.sleep(4)
     current = page_text()
     still = editor_info()
     if isinstance(still, dict) and still.get("len", 0) > 20 and "正在执行中" not in current:
-        cdp("key", "Enter")
+        CDP.run("key", "Enter")
         log(log_path, "resent")
         time.sleep(2)
         again = editor_info()
         if isinstance(again, dict) and again.get("len", 0) > 20:
             # Some builds need the button; Enter only inserts a newline.
-            clicked = js("""(() => {
+            clicked = CDP.js("""(() => {
               const b = document.querySelector('[aria-label="Send message"], [aria-label="发送"]');
               if (!b) return 'not found';
               b.click();
@@ -280,22 +239,9 @@ def send_prompt(prompt, log_path):
     return True
 
 
-def pending_approval():
-    labels = json.dumps(list(APPROVE_LABELS), ensure_ascii=False)
-    return js(f"""(() => {{
-      const labels = {labels};
-      const els = Array.from(document.querySelectorAll('button,[role="button"],div,span'))
-        .filter(e => e.offsetParent !== null);
-      for (const label of labels) {{
-        if (els.some(e => (e.innerText || '').trim() === label)) return label;
-      }}
-      return null;
-    }})()""")
-
-
 def approve_native(label):
     """Click the approval button with the real pointer; its split menu needs a second click."""
-    rect = js(f"""(() => {{
+    rect = CDP.js(f"""(() => {{
       const els = Array.from(document.querySelectorAll('button,[role="button"]'))
         .filter(e => e.offsetParent !== null && (e.innerText || '').trim() === {json.dumps(label)});
       const el = els[els.length - 1];
@@ -305,10 +251,10 @@ def approve_native(label):
     }})()""")
     if not isinstance(rect, dict):
         return False
-    cdp("clickxy", f"{rect['x']},{rect['y']}")
+    CDP.run("clickxy", f"{rect['x']},{rect['y']}")
     time.sleep(0.6)
     for item in ("允许一次", "本次任务允许"):
-        item_rect = js(f"""(() => {{
+        item_rect = CDP.js(f"""(() => {{
           const els = Array.from(document.querySelectorAll('button,div,span'))
             .filter(e => e.offsetParent !== null && (e.innerText || '').trim() === {json.dumps(item)});
           const el = els[els.length - 1];
@@ -317,7 +263,7 @@ def approve_native(label):
           return {{x: Math.round(r.x + r.width/2), y: Math.round(r.y + r.height/2)}};
         }})()""")
         if isinstance(item_rect, dict):
-            cdp("clickxy", f"{item_rect['x']},{item_rect['y']}")
+            CDP.run("clickxy", f"{item_rect['x']},{item_rect['y']}")
             return True
     return True
 
@@ -336,7 +282,7 @@ def wait_done(log_path, timebox, idle_s=30, debug=False):
         running = "正在执行中" in current
         if running:
             seen_running = True
-        label = pending_approval()
+        label = CDP.pending_label(APPROVE_LABELS)
         if label:
             approve_native(label)
             approvals += 1
@@ -381,10 +327,14 @@ def main():
                     help="只报告 CDP/界面结构，不点击、不发送")
     a = ap.parse_args()
 
-    global MATCH_TITLE
-    MATCH_TITLE = Path(a.workdir).name
+    global CDP
+    CDP = Cdp(
+        [sys.executable, str(CDP_SCRIPT), "--port", "9444",
+         "--match-title", Path(a.workdir).name],
+        "_qoder_tmp.js",
+    )
 
-    probe = cdp("text", timeout=15)
+    probe = CDP.run("text", timeout=15)
     if probe.returncode != 0:
         detail = ((probe.stderr or "") + (probe.stdout or "")).strip()[-400:]
         raise SystemExit(

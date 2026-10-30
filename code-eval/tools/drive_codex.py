@@ -17,6 +17,9 @@ from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
+sys.path.insert(0, str(HERE))
+from driver_core import build_feedback  # noqa: E402
+
 CODEX = shutil.which("codex") or "codex"
 
 
@@ -86,15 +89,6 @@ def tool_label():
     except OSError:
         pass
     return "Codex CLI"
-
-
-def build_feedback(result):
-    lines = ["上一轮没有通过验收，请继续在这个仓库里修（不要改 tests/）："]
-    for failure in (result.get("accept") or {}).get("failures", [])[:8]:
-        tail = [ln for ln in (failure.get("message") or "").splitlines() if ln.strip()]
-        lines.append(f"- {failure.get('test')}: {tail[-1][:160] if tail else ''}")
-    lines.append("改完自己跑一遍仓库现有测试，再说明改了什么。")
-    return "\n".join(lines)
 
 
 def main():
@@ -175,7 +169,9 @@ def main():
             if result is None or result.get("verdict") == "pass" or index > a.max_rounds:
                 index -= 1
                 break
-            prompt = build_feedback(result)
+            prompt = build_feedback(
+                result, "改完自己跑一遍仓库现有测试，再说明改了什么。"
+            )
 
         if index == 1:
             args = [CODEX, "exec", "--skip-git-repo-check", "-s", "workspace-write",
