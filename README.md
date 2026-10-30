@@ -19,6 +19,7 @@
 | `templates/report.md` | 六节问题清单模板（问题总览 + 全量清单，图随问题） |
 | `harness/` | 跨平台入口 `wt.py`（截图 / 点击 / OCR / 启动 / 出片 / 预检 / 覆盖检查）+ `ui-map.py` 控件枚举 + Linux 隔离桌面脚本 + CDP 驱动；`webapp_accept.mjs` 全栈验收（Node 20+，随机端口 + 全新 DB）；`llm_operator.py` 让自带 LLM key 的 operator 自己观察/操作被测产品；`report_share.py` 把 Markdown 出成单文件 HTML / PDF / 钉钉 MD |
 | `verify_all.py` | 一条命令跑完整健康检查：单元测试、任务规格、两个自测、Node 语法、Python 编译 |
+| `start.sh` | 一条命令起工作台：查 Python 版本、挑可用端口（8790 被占用时自动后移），再交给 `workbench/server.py`；参数原样透传 |
 | `code-eval/` | 编码能力判分（实验）：12 档 + L4b 对照 + 2 个完整项目 = 15 个任务（Python + 一个 Node.js 并发任务，含一个真实开源仓库）+ 隐藏验收 + `prepare/grade/scorecard` + TRAE/Codex/Cursor/Qoder 驱动器 + `dashboard/` 评测控制台（只读 / 本地启动） |
 | `office-eval/` | 办公产物判分（实验）：xlsx 任务 + openpyxl 隐藏验收 + 判分/自测；docx 任务待加 |
 | `agent-kit/` | 借鉴 Harness² 的 8 组件骨架（system prompt / guardrails / memory / tool guidance / skills / subagents / scripts / plugins） |
@@ -100,8 +101,11 @@ python3 harness/wt.py report runs/<date>-<tool> --redact 10,865,300,75
 不想记命令时，用一个本地页面把「配置 → 选任务 → 跑 → 看产物」串起来：
 
 ```bash
-python3 workbench/server.py            # http://127.0.0.1:8790/
+./start.sh                             # http://127.0.0.1:8790/（被占用自动换下一个）
+./start.sh --port 8791                 # 固定端口；被占用会直接报错
 ```
+
+`start.sh` 只做启动前检查，真正的服务还是 `python3 workbench/server.py`（Windows 直接跑这条）。
 
 - 设置页把 endpoint / 模型 / key 写进 `~/.config/tool-walkthrough/config.json`（`0600`）；浏览器只拿回“是否已配置”和末四位。
 - 走查页启动 `harness/wt.py agent`；评测页启动 `code-eval/tools/run_tool.py`（外部 CLI 用各自的登录态，不读这个 key）。

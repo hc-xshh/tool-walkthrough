@@ -3,8 +3,9 @@
 把 harness 的常用动作收进一个本地页面：**配置模型 → 选任务 → 跑 → 看产物**。
 
 ```bash
-python3 workbench/server.py                 # http://127.0.0.1:8790/
-python3 workbench/server.py --port 8791     # 端口被占用时
+./start.sh                                  # 仓库根目录；http://127.0.0.1:8790/
+./start.sh --port 8791                      # 固定端口；被占用会报错，不会偷偷换
+python3 workbench/server.py                 # 等价的直接启动（Windows 用这条）
 ```
 
 只依赖 Python 标准库。走查后端（CDP / 桌面）需要 `harness/requirements.txt` 里的包：
