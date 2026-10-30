@@ -29,6 +29,8 @@ code-eval/
 
 驱动器清单只在 [`drivers.json`](drivers.json) 维护：工具名、GUI 端口、CLI 命令、页面可透传的参数、页面开关都在里面。工作台、dashboard 服务端和前端都从它读；新增工具 = 一个 `drive_*.py` + 一条 JSON 记录。
 
+驱动跑长任务时会盯界面：默认 180 秒没变化（`--stall-timeout`）就截两张图比对、抓所有可见按钮的坐标、装了 tesseract 时再加一遍 OCR，把`results/<case>-stallN.{png,txt}` 写进 run 目录。认出已知确认框就直接点；认出登录/额度/协议这类就带证据停下；界面冻住又认不出，第二次就退出，不再干等 timebox。tesseract 没装只是少 OCR，截图和按钮照常。
+
 已有结果：[`reports/2026-10-22-trae-cn.md`](reports/2026-10-22-trae-cn.md)（TRAE CN 3.4.4，L1–L9 各 3 次）、
 [`reports/2026-10-29-codex-l10-l12.md`](reports/2026-10-29-codex-l10-l12.md)（Codex CLI 0.163.0 / deepseek-flash，
 L10–L12 各 3 次，9/9 通过）。Qoder CN 0.4.9 与四家横向（Trae / Qoder / Cursor / Codex）也跑过，但那两份报告没有入库，只在本机 `runs/` 下——不要当成可引用的公开结论。

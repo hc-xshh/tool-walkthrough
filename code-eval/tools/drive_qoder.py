@@ -23,6 +23,7 @@ HERE = Path(__file__).resolve().parent
 EVAL = HERE.parent
 sys.path.insert(0, str(HERE))
 import dialogs  # noqa: E402  (same directory; rules live there)
+import stall  # noqa: E402  (same directory; stall diagnostics)
 from driver_core import CDP_SCRIPT, Cdp, log, wait_for  # noqa: E402
 
 CDP = Cdp([sys.executable, str(CDP_SCRIPT), "--port", "9444"], "_qoder_tmp.js")
@@ -334,10 +335,12 @@ def approve_native(label):
     return True
 
 
-def wait_done(log_path, timebox, idle_s=30, debug=False):
+def wait_done(log_path, timebox, idle_s=30, debug=False, stall_timeout=180):
     deadline = time.time() + timebox
     started = time.time()
     last_report = started
+    next_stall = 0.0
+    stall_reports = 0
     warned_unmatched = False
     seen_running = False
     stable = 0
@@ -345,9 +348,10 @@ def wait_done(log_path, timebox, idle_s=30, debug=False):
     last_change = time.time()
     approvals = 0
     while time.time() < deadline:
+        now = time.time()
         current = page_text()
         if current != last:
-            last, last_change = current, time.time()
+            last, last_change = current, now
         running = "正在执行中" in current
         if running:
             seen_running = True
@@ -364,6 +368,38 @@ def wait_done(log_path, timebox, idle_s=30, debug=False):
             warned_unmatched = True
             print("[qoder] 界面上有未识别的确认框（拒绝/接受），可能在等人点", flush=True)
             log(log_path, "approval_unrecognised")
+
+        if stall_timeout and not running and now - last_change >= stall_timeout and now >= next_stall:
+            # Nothing moved for a while. Look at the screen instead of waiting
+            # for the timebox: a known prompt is clicked, a blocked one stops
+            # the run with evidence, an unrecognised frozen screen stops too.
+            tag = f"{Path(log_path).stem}-stall{stall_reports + 1}"
+            report = stall.diagnose(CDP, Path(log_path).parent, tag, current)
+            stall_reports += 1
+            next_stall = now + stall_timeout
+            log(log_path, "stall", verdict=report["verdict"], frozen=report["frozen"],
+                ocr=report["ocr"], evidence=report["evidence"])
+            print(f"[qoder] 界面 {int(now - last_change)}s 无进展 → {report['verdict']}"
+                  f"（{report.get('reason') or '-'}；证据 {report['evidence']}）", flush=True)
+            if report["verdict"] == "handled":
+                click = report.get("click")
+                if click:
+                    CDP.run("clickxy", f"{click['x']},{click['y']}")
+                else:
+                    approve_native(report["label"])
+                approvals += 1
+                log(log_path, "stall_handled", label=report["label"],
+                    reason=report.get("reason"), via=report.get("via"))
+                last_change = time.time()
+                continue
+            if report["verdict"] in ("blocked", "dead"):
+                log(log_path, "stall_stopped", verdict=report["verdict"],
+                    reason=report.get("reason"), evidence=report["evidence"])
+                raise SystemExit(
+                    f"界面停在「{report.get('reason') or report['verdict']}」"
+                    f"（{report['verdict']}），已留证：{report['evidence']}")
+            if report["frozen"] and stall_reports >= 2:
+                raise SystemExit(f"界面冻结、没有可点的已知按钮，已留证：{report['evidence']}")
         if seen_running and not running and "由 AI 生成" in current:
             stable += 1
             if stable >= 3:
@@ -402,6 +438,8 @@ def main():
     ap.add_argument("--tool", default="Qoder CN")
     ap.add_argument("--idle", type=int, default=30)
     ap.add_argument("--debug", action="store_true")
+    ap.add_argument("--stall-timeout", type=int, default=180,
+                    help="界面多久没变化就截图/OCR 诊断（秒；0 关闭）")
     ap.add_argument("--skip-workspace", action="store_true")
     ap.add_argument("--check", action="store_true",
                     help="只报告 CDP/界面结构，不点击、不发送")
@@ -475,7 +513,7 @@ def main():
     for index, prompt in enumerate(prompts, 1):
         if not send_prompt(prompt, log_path):
             raise SystemExit(f"prompt insert failed (round {index})")
-        ok, approvals = wait_done(log_path, a.timebox, a.idle, a.debug)
+        ok, approvals = wait_done(log_path, a.timebox, a.idle, a.debug, a.stall_timeout)
         if not ok:
             log(log_path, "round_timeout", round=index)
             break
